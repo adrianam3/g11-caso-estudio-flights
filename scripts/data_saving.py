@@ -19,7 +19,9 @@ def guardar_datos_limpios(df: pd.DataFrame, path_salida: str, nombre_archivo: st
         "SECURITY_DELAY",
         "AIRLINE_DELAY",
         "LATE_AIRCRAFT_DELAY",
-        "WEATHER_DELAY"
+        "WEATHER_DELAY", 
+        "ORIGEN_PAIS", 
+        "DEST_PAIS"
     ]
 
     df = df.drop(columns=[c for c in columnas_eliminar if c in df.columns], errors="ignore")

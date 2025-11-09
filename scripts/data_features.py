@@ -103,30 +103,30 @@ def generar_nuevas_columnas(v):
     )
 
     # --- Ruta (origen-destino) ---
-    v["RUTA"] = v["ORIGIN_AIRPORT"].astype(str) + "_" + v["DESTINATION_AIRPORT"].astype(str)
+    # v["RUTA"] = v["ORIGIN_AIRPORT"].astype(str) + "_" + v["DESTINATION_AIRPORT"].astype(str)
 
     print("✅ Nuevas columnas generadas correctamente.")
     return v
 
 
-def resumen_causas(v):
-    """Muestra resumen estadístico de las causas de retraso."""
-    mask_pos = v["ARRIVAL_DELAY"] > 0
-    con_retraso = mask_pos.sum()
-    cero = (mask_pos & (v["CANTIDAD_CAUSAS"] == 0)).sum()
-    una = (mask_pos & (v["CANTIDAD_CAUSAS"] == 1)).sum()
-    multi = (mask_pos & (v["CANTIDAD_CAUSAS"] >= 2)).sum()
+# def resumen_causas(v):
+#     """Muestra resumen estadístico de las causas de retraso."""
+#     mask_pos = v["ARRIVAL_DELAY"] > 0
+#     con_retraso = mask_pos.sum()
+#     cero = (mask_pos & (v["CANTIDAD_CAUSAS"] == 0)).sum()
+#     una = (mask_pos & (v["CANTIDAD_CAUSAS"] == 1)).sum()
+#     multi = (mask_pos & (v["CANTIDAD_CAUSAS"] >= 2)).sum()
 
-    print("\n📊 Resumen de causas (solo ARRIVAL_DELAY>0):")
-    print(f"  Vuelos con retraso:          {con_retraso:,}")
-    print(f"  0 causas reportadas:         {cero:,}   ({cero/con_retraso*100:.2f}%)")
-    print(f"  1 causa reportada:           {una:,}    ({una/con_retraso*100:.2f}%)")
-    print(f"  ≥2 causas (multifactorial):  {multi:,}  ({multi/con_retraso*100:.2f}%)")
+#     print("\n📊 Resumen de causas (solo ARRIVAL_DELAY>0):")
+#     print(f"  Vuelos con retraso:          {con_retraso:,}")
+#     print(f"  0 causas reportadas:         {cero:,}   ({cero/con_retraso*100:.2f}%)")
+#     print(f"  1 causa reportada:           {una:,}    ({una/con_retraso*100:.2f}%)")
+#     print(f"  ≥2 causas (multifactorial):  {multi:,}  ({multi/con_retraso*100:.2f}%)")
 
-    dist_causas = (
-        v.loc[mask_pos, "CANTIDAD_CAUSAS"]
-        .value_counts().sort_index().to_frame("conteo")
-    )
-    dist_causas["porcentaje"] = (dist_causas["conteo"] / con_retraso * 100).round(2)
-    return dist_causas
+#     dist_causas = (
+#         v.loc[mask_pos, "CANTIDAD_CAUSAS"]
+#         .value_counts().sort_index().to_frame("conteo")
+#     )
+#     dist_causas["porcentaje"] = (dist_causas["conteo"] / con_retraso * 100).round(2)
+#     return dist_causas
 
