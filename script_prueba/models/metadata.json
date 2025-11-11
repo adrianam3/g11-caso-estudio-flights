@@ -1,0 +1,29 @@
+{
+  "features": [
+    "MONTH",
+    "DAY_OF_WEEK",
+    "SALIDA_SIN",
+    "SALIDA_COS",
+    "MONTH_SIN",
+    "MONTH_COS",
+    "DISTANCIA_HAV",
+    "MINUTO_DIA_SALIDA",
+    "AIRLINE_TE",
+    "ORIGIN_AIRPORT_TE",
+    "DESTINATION_AIRPORT_TE",
+    "RUTA_TE"
+  ],
+  "cols_te": [
+    "AIRLINE",
+    "ORIGIN_AIRPORT",
+    "DESTINATION_AIRPORT",
+    "RUTA"
+  ],
+  "auc_valid": 0.6110862552931283,
+  "split": {
+    "train_months": "1-9",
+    "valid_months": "10-12"
+  },
+  "scale_pos_weight": 4.337963077931689,
+  "note": "LightGBM + KFold Target Encoding (AIRLINE, ORIGIN_AIRPORT, DESTINATION_AIRPORT, RUTA)"
+}
