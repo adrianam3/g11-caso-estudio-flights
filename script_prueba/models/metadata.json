@@ -8,10 +8,21 @@
     "MONTH_COS",
     "DISTANCIA_HAV",
     "MINUTO_DIA_SALIDA",
+    "HORA_SALIDA",
     "AIRLINE_TE",
     "ORIGIN_AIRPORT_TE",
     "DESTINATION_AIRPORT_TE",
-    "RUTA_TE"
+    "RUTA_TE",
+    "AIR_rate",
+    "AIR_n",
+    "ORI_rate",
+    "ORI_n",
+    "DES_rate",
+    "DES_n",
+    "RUTA_rate",
+    "RUTA_n",
+    "RUTA_HORA_rate",
+    "RUTA_HORA_n"
   ],
   "cols_te": [
     "AIRLINE",
@@ -19,11 +30,11 @@
     "DESTINATION_AIRPORT",
     "RUTA"
   ],
-  "auc_valid": 0.6110862552931283,
+  "auc_valid": 0.5960857049107908,
   "split": {
     "train_months": "1-9",
     "valid_months": "10-12"
   },
   "scale_pos_weight": 4.337963077931689,
-  "note": "LightGBM + KFold Target Encoding (AIRLINE, ORIGIN_AIRPORT, DESTINATION_AIRPORT, RUTA)"
+  "note": "LightGBM + KFold Target Encoding + agregados hist\u00f3ricos (sin fuga)"
 }

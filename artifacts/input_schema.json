@@ -1,0 +1,15 @@
+{
+  "required_raw_fields": [
+    "MONTH",
+    "DAY_OF_WEEK",
+    "AIRLINE",
+    "ORIGIN_AIRPORT",
+    "DESTINATION_AIRPORT",
+    "SCHEDULED_DEPARTURE",
+    "ORIGEN_LAT",
+    "ORIGEN_LON",
+    "DEST_LAT",
+    "DEST_LON"
+  ],
+  "notes": "Si la entrada ya trae SALIDA_SIN/SALIDA_COS/DISTANCIA_HAV, se usan directamente."
+}
