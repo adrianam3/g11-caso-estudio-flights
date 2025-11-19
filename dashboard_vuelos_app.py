@@ -4,7 +4,10 @@ import streamlit as st
 import plotly.express as px
 import numpy as np
 import plotly.graph_objects as go
-
+import joblib
+from pathlib import Path
+from datetime import datetime
+import io
 
 # ============================
 # CONFIGURACIÓN INICIAL
@@ -584,7 +587,150 @@ with tab_resumen:
     st.markdown("---")
 
 
+# ==========================
+# Histograma de retraso en llegada
+# ==========================
+st.markdown("### Histograma de retraso en llegada")
+
+if "ARRIVAL_DELAY" not in df.columns:
+    st.warning("El dataset no contiene la columna ARRIVAL_DELAY.")
+else:
+    # Filtrar rango razonable para el histograma
+    delay_min, delay_max = -20, 300
+    df_hist = (
+        df[df["ARRIVAL_DELAY"].between(delay_min, delay_max)]
+        [["ARRIVAL_DELAY"]]
+        .dropna()
+        .copy()
+    )
+
+    if df_hist.empty:
+        st.info("No hay datos de retraso en llegada en el rango seleccionado.")
+    else:
+        total_vuelos_hist = len(df_hist)
+
+        # Vuelos considerados "a tiempo" dentro de [-15, 15] minutos
+        rango_inf, rango_sup = -15, 15
+        en_rango = df_hist[
+            df_hist["ARRIVAL_DELAY"].between(rango_inf, rango_sup)
+        ].shape[0]
+        porc_en_rango = en_rango / total_vuelos_hist * 100
+
+        # Histograma con Plotly
+        fig_hist = px.histogram(
+            df_hist,
+            x="ARRIVAL_DELAY",
+            nbins=50,
+            title=f"Histograma de retraso en llegada (entre {delay_min} y {delay_max} min)",
+            labels={
+                "ARRIVAL_DELAY": "Retraso en llegada (min)",
+                "count": "Número de vuelos",
+            },
+        )
+
+        # Líneas de referencia: 0 y +15 minutos
+        linea_umbral_color = "#455A64"  # gris azulado
+        fig_hist.add_vline(
+            x=0,
+            line_dash="dot",
+            line_color="#9E9E9E",
+            line_width=1,
+            annotation_text="0 min",
+            annotation_position="top left",
+        )
+        fig_hist.add_vline(
+            x=15,
+            line_dash="dot",
+            line_color=linea_umbral_color,
+            line_width=2,
+            annotation_text="+15 min",
+            annotation_position="top right",
+        )
+
+        # Fondo suave para todo el gráfico (similar al scatter)
+        fig_hist.update_layout(
+            plot_bgcolor="rgba(255, 248, 225, 0.6)",  # beige claro
+            xaxis_title="Retraso en llegada (min)",
+            yaxis_title="Número de vuelos",
+        )
+
+        st.plotly_chart(fig_hist, use_container_width=True)
+
+        # Texto explicativo con el % dentro del umbral
+        st.caption(
+            f"🛈 En el rango [{rango_inf} min, {rango_sup} min] se encuentran "
+            f"**{en_rango:,} vuelos**, lo que representa aproximadamente "
+            f"**{porc_en_rango:.1f}%** de los vuelos considerados en este histograma."
+        )
     
+    # ==========================
+    # Ranking de aerolíneas por % de retrasos (> 15 min)
+    # ==========================
+    st.markdown("### Aerolíneas con mayor porcentaje de vuelos retrasados (> 15 min)")
+
+    # Detectamos el nombre de la columna de aerolínea (ajusta si tu dataframe usa otro nombre)
+    col_aerolinea = "AIRLINE_NAME" if "AIRLINE_NAME" in df.columns else "AIRLINE"
+
+    if ("ARRIVAL_DELAY" not in df.columns) or (col_aerolinea not in df.columns):
+        st.warning("No se encontraron las columnas necesarias para el ranking de aerolíneas.")
+    else:
+        df_air = df[[col_aerolinea, "ARRIVAL_DELAY"]].dropna().copy()
+
+        if df_air.empty:
+            st.info("No hay datos de vuelos para generar el ranking con los filtros actuales.")
+        else:
+            # Variable retrasado > 15 min
+            df_air["RETRASADO_15"] = df_air["ARRIVAL_DELAY"] > 15
+
+            resumen_air = (
+                df_air.groupby(col_aerolinea, observed=True)["RETRASADO_15"]
+                .agg(
+                    Total_vuelos="size",
+                    Porc_retrasados=lambda s: s.mean() * 100,
+                )
+                .reset_index()
+            )
+
+            # Opcional: filtrar aerolíneas con muy pocos vuelos para evitar ruido
+            resumen_air = resumen_air[resumen_air["Total_vuelos"] >= 100]
+
+            if resumen_air.empty:
+                st.info("No hay aerolíneas con suficientes vuelos para mostrar el ranking.")
+            else:
+                # Ordenar por % de retrasos (descendente) y tomar TOP 10
+                resumen_air = resumen_air.sort_values("Porc_retrasados", ascending=False).head(10)
+
+                fig_rank = px.bar(
+                    resumen_air,
+                    x="Porc_retrasados",
+                    y=col_aerolinea,
+                    orientation="h",
+                    title="Top 10 aerolíneas por porcentaje de vuelos retrasados (> 15 min)",
+                    labels={
+                        col_aerolinea: "Aerolínea",
+                        "Porc_retrasados": "% de vuelos retrasados (> 15 min)",
+                    },
+                    text=resumen_air["Porc_retrasados"].map(lambda x: f"{x:.1f}%"),
+                    color="Porc_retrasados",
+                    color_continuous_scale="Reds",
+                )
+
+                fig_rank.update_traces(textposition="outside")
+
+                fig_rank.update_layout(
+                    plot_bgcolor="rgba(255, 248, 225, 0.6)",  # mismo estilo suave que el scatter/histo
+                    xaxis_title="% de vuelos retrasados (> 15 min)",
+                    yaxis_title="Aerolínea",
+                    coloraxis_showscale=False,
+                    margin=dict(l=80, r=40, t=80, b=40),
+                )
+
+                st.plotly_chart(fig_rank, use_container_width=True)
+
+                st.caption(
+                    "🛈 Se muestran las aerolíneas con al menos **100 vuelos** en el periodo filtrado, "
+                    "ordenadas por mayor porcentaje de vuelos con retraso superior a 15 minutos."
+                )
 
 
     st.markdown("---")
