@@ -335,13 +335,296 @@ with tab_resumen:
     col6.metric("Aerolínea Más Retrasada a las Salida", f"{airline_name_d}")
     col7.metric("Aerolínea Más Retrasada a la Llegada", f"{airline_name_lle}")
     col8.metric("Ruta Más Afectada", f"{ruta_origen} → {ruta_destino}", delta=f"{delta_ruta:.2f} min")
+    
+    st.markdown("---")
 
     st.markdown("---")
-    # =======================
-    # GRÁFICO COMBINADO MES (% + TOTAL)
-    # =======================
+
+    # ==========================
+    # Gráficos de pastel de puntualidad
+    # ==========================
+    if "ARRIVAL_DELAY" in df.columns:
+        # --- A) Clasificación general: Antes de tiempo / A tiempo / Retrasado ---
+        if "ESTADO_LLEGADA_CAT" not in df.columns:
+            def clasificar_estado_llegada(delay):
+                if pd.isna(delay):
+                    return "Sin dato"
+                if delay < 0:
+                    return "Antes de tiempo"
+                if delay == 0:
+                    return "A tiempo"
+                return "Retrasado"
+
+            df["ESTADO_LLEGADA_CAT"] = df["ARRIVAL_DELAY"].apply(clasificar_estado_llegada)
+
+        resumen_puntualidad = (
+            df
+            .groupby("ESTADO_LLEGADA_CAT", dropna=False)
+            .size()
+            .reset_index(name="Cantidad")
+        )
+
+        orden_cat = ["Antes de tiempo", "A tiempo", "Retrasado", "Sin dato"]
+        resumen_puntualidad["ESTADO_LLEGADA_CAT"] = pd.Categorical(
+            resumen_puntualidad["ESTADO_LLEGADA_CAT"],
+            categories=orden_cat,
+            ordered=True
+        )
+        resumen_puntualidad = resumen_puntualidad.dropna(subset=["ESTADO_LLEGADA_CAT"])
+
+        total_vuelos_cat = int(resumen_puntualidad["Cantidad"].sum())
+        if total_vuelos_cat > 0:
+            resumen_puntualidad["Porc_sobre_total"] = (
+                resumen_puntualidad["Cantidad"] / total_vuelos_cat * 100
+            )
+        else:
+            resumen_puntualidad["Porc_sobre_total"] = 0.0
+
+        # --- B) Clasificación por umbral de 15 minutos ---
+        def clasificar_15min(delay):
+            if pd.isna(delay):
+                return "Sin dato"
+            # Consideramos <= 15 como a tiempo
+            if delay <= 15:
+                return "A tiempo (≤ 15 min)"
+            return "Retrasado (> 15 min)"
+
+        df["PUNTUALIDAD_15MIN"] = df["ARRIVAL_DELAY"].apply(clasificar_15min)
+
+        resumen_15 = (
+            df
+            .groupby("PUNTUALIDAD_15MIN", dropna=False)
+            .size()
+            .reset_index(name="Cantidad")
+        )
+
+        orden_cat_15 = ["A tiempo (≤ 15 min)", "Retrasado (> 15 min)", "Sin dato"]
+        resumen_15["PUNTUALIDAD_15MIN"] = pd.Categorical(
+            resumen_15["PUNTUALIDAD_15MIN"],
+            categories=orden_cat_15,
+            ordered=True
+        )
+        resumen_15 = resumen_15.dropna(subset=["PUNTUALIDAD_15MIN"])
+
+        total_vuelos_15 = int(resumen_15["Cantidad"].sum())
+        if total_vuelos_15 > 0:
+            resumen_15["Porc_sobre_total"] = (
+                resumen_15["Cantidad"] / total_vuelos_15 * 100
+            )
+        else:
+            resumen_15["Porc_sobre_total"] = 0.0
+
+        # --- C) Dibujar los dos pasteles lado a lado ---
+        st.markdown("### Análisis de puntualidad de llegadas")
+
+        col_p1, col_p2 = st.columns(2)
+
+        color_map_estado = {
+            "Antes de tiempo": "#4CAF50",
+            "A tiempo": "#2196F3",
+            "Retrasado": "#F44336",
+            "Sin dato": "#9E9E9E",
+        }
+
+        color_map_15 = {
+            "A tiempo (≤ 15 min)": "#4CAF50",
+            "Retrasado (> 15 min)": "#F44336",
+            "Sin dato": "#9E9E9E",
+        }
+
+        # Pastel 1: distribución general
+        with col_p1:
+            st.markdown("#### Distribución general de puntualidad")
+            if not resumen_puntualidad.empty:
+                fig_pie_estado = px.pie(
+                    resumen_puntualidad,
+                    names="ESTADO_LLEGADA_CAT",
+                    values="Cantidad",
+                    title=f"Total de vuelos por estado de llegada (N = {total_vuelos_cat:,})",
+                    color="ESTADO_LLEGADA_CAT",
+                    color_discrete_map=color_map_estado,
+                )
+                fig_pie_estado.update_traces(
+                    textposition="inside",
+                    textinfo="label+percent",
+                )
+                st.plotly_chart(fig_pie_estado, use_container_width=True)
+            else:
+                st.info("No hay datos para la distribución general de puntualidad.")
+
+        # Pastel 2: retrasos > 15 minutos
+        with col_p2:
+            st.markdown("#### Vuelos con retraso > 15 minutos")
+            if not resumen_15.empty:
+                fig_pie_15 = px.pie(
+                    resumen_15,
+                    names="PUNTUALIDAD_15MIN",
+                    values="Cantidad",
+                    title=f"Vuelos según umbral de 15 minutos (N = {total_vuelos_15:,})",
+                    color="PUNTUALIDAD_15MIN",
+                    color_discrete_map=color_map_15,
+                )
+                fig_pie_15.update_traces(
+                    textposition="inside",
+                    textinfo="label+percent",
+                )
+                st.plotly_chart(fig_pie_15, use_container_width=True)
+            else:
+                st.info("No hay datos para el análisis de umbral de 15 minutos.")
+
+    else:
+        st.info("El dataset no contiene la columna ARRIVAL_DELAY; no se pueden generar los gráficos de puntualidad.")
 
     st.markdown("---")
+
+
+    st.markdown("---")
+    st.markdown("---")
+
+    st.markdown("---")
+
+    # ==========================
+    # Relación entre retraso en salida y llegada (umbral 15 minutos)
+    # ==========================
+    st.markdown("### Relación entre retraso en salida y llegada (umbral 15 minutos)")
+
+    try:
+        # Usamos el df ya filtrado por los controles del sidebar
+        df_scatter = df[["DEPARTURE_DELAY", "ARRIVAL_DELAY"]].dropna().copy()
+
+        if df_scatter.empty:
+            st.info("No hay datos de retraso de salida y llegada para graficar con los filtros actuales.")
+        else:
+            # Clasificación a tiempo / retrasado con umbral de 15 minutos
+            def clasificar_15min(valor):
+                if pd.isna(valor):
+                    return "Sin dato"
+                return "A tiempo (≤ 15 min)" if valor <= 15 else "Retrasado (> 15 min)"
+
+            df_scatter["ESTADO_SALIDA_15"] = df_scatter["DEPARTURE_DELAY"].apply(clasificar_15min)
+            df_scatter["ESTADO_LLEGADA_15"] = df_scatter["ARRIVAL_DELAY"].apply(clasificar_15min)
+
+            # Categoría combinada para colorear el scatter
+            def combinar_cat(row):
+                if row["ESTADO_SALIDA_15"] == "Sin dato" or row["ESTADO_LLEGADA_15"] == "Sin dato":
+                    return "Sin dato"
+                if row["ESTADO_SALIDA_15"].startswith("A tiempo") and row["ESTADO_LLEGADA_15"].startswith("A tiempo"):
+                    return "Salida y llegada a tiempo"
+                if row["ESTADO_SALIDA_15"].startswith("A tiempo") and row["ESTADO_LLEGADA_15"].startswith("Retrasado"):
+                    return "Salida a tiempo, llegada retrasada"
+                if row["ESTADO_SALIDA_15"].startswith("Retrasado") and row["ESTADO_LLEGADA_15"].startswith("A tiempo"):
+                    return "Salida retrasada, llegada a tiempo"
+                return "Salida y llegada retrasadas"
+
+            df_scatter["CATEGORIA_15"] = df_scatter.apply(combinar_cat, axis=1)
+
+            # Muestra aleatoria para no saturar el navegador
+            max_puntos = 20000
+            if len(df_scatter) > max_puntos:
+                df_scatter = df_scatter.sample(max_puntos, random_state=42)
+
+            # Rangos amplios (como el primer gráfico) usando percentil 1–99
+            x_min, x_max = df_scatter["DEPARTURE_DELAY"].quantile([0.01, 0.99])
+            y_min, y_max = df_scatter["ARRIVAL_DELAY"].quantile([0.01, 0.99])
+
+            # Un poco de aire alrededor
+            x_min = float(x_min) - 5
+            x_max = float(x_max) + 5
+            y_min = float(y_min) - 5
+            y_max = float(y_max) + 5
+
+            color_map_cat = {
+                "Salida y llegada a tiempo": "#4CAF50",
+                "Salida a tiempo, llegada retrasada": "#FFC107",
+                "Salida retrasada, llegada a tiempo": "#03A9F4",
+                "Salida y llegada retrasadas": "#F44336",
+                "Sin dato": "#9E9E9E",
+            }
+
+            fig_rel = px.scatter(
+                df_scatter,
+                x="DEPARTURE_DELAY",
+                y="ARRIVAL_DELAY",
+                color="CATEGORIA_15",
+                color_discrete_map=color_map_cat,
+                labels={
+                    "DEPARTURE_DELAY": "Retraso en salida (min)",
+                    "ARRIVAL_DELAY": "Retraso en llegada (min)",
+                    "CATEGORIA_15": "Clasificación (umbral 15 min)",
+                },
+                title="Relación entre retraso de salida y llegada (umbral 15 minutos)",
+                opacity=0.6,
+            )
+
+            # ---------- Cuadrantes pastel usando yref='paper' ----------
+            # Normalizamos la posición del umbral 15 min en el eje Y a [0, 1]
+            # para poder usar yref='paper'
+            y_frac = (15 - y_min) / (y_max - y_min)
+            y_frac = max(0, min(1, y_frac))  # lo limitamos entre 0 y 1
+
+            quadrant_shapes = [
+                # Abajo-izquierda: salida y llegada a tiempo
+                dict(
+                    type="rect", xref="x", yref="paper",
+                    x0=x_min, x1=15,
+                    y0=0, y1=y_frac,
+                    fillcolor="rgba(76, 175, 80, 0.10)",  # verde suave
+                    line_width=0,
+                    layer="below",
+                ),
+                # Abajo-derecha: salida retrasada, llegada a tiempo
+                dict(
+                    type="rect", xref="x", yref="paper",
+                    x0=15, x1=x_max,
+                    y0=0, y1=y_frac,
+                    fillcolor="rgba(3, 169, 244, 0.10)",  # azul suave
+                    line_width=0,
+                    layer="below",
+                ),
+                # Arriba-izquierda: salida a tiempo, llegada retrasada
+                dict(
+                    type="rect", xref="x", yref="paper",
+                    x0=x_min, x1=15,
+                    y0=y_frac, y1=1,
+                    fillcolor="rgba(255, 193, 7, 0.12)",  # amarillo suave
+                    line_width=0,
+                    layer="below",
+                ),
+                # Arriba-derecha: salida y llegada retrasadas
+                dict(
+                    type="rect", xref="x", yref="paper",
+                    x0=15, x1=x_max,
+                    y0=y_frac, y1=1,
+                    fillcolor="rgba(244, 67, 54, 0.10)",  # rojo suave
+                    line_width=0,
+                    layer="below",
+                ),
+            ]
+
+            # Líneas de referencia en el umbral de 15 minutos (color gris azulado)
+            linea_umbral_color = "#455A64"
+            fig_rel.add_hline(y=15, line_dash="dot", line_color=linea_umbral_color, line_width=2)
+            fig_rel.add_vline(x=15, line_dash="dot", line_color=linea_umbral_color, line_width=2)
+
+            fig_rel.update_layout(
+                xaxis=dict(range=[x_min, x_max]),
+                yaxis=dict(range=[y_min, y_max]),
+                legend_title="Categoría",
+                shapes=quadrant_shapes,
+            )
+
+            st.plotly_chart(fig_rel, use_container_width=True)
+
+    except KeyError as e:
+        st.warning(f"No se pudo generar el gráfico de relación salida vs llegada: {e}")
+
+    st.markdown("---")
+
+    
+
+
+    st.markdown("---")
+
 
     # ==========================
     # Tendencia mensual: Total de vuelos vs % de retrasos
@@ -507,6 +790,7 @@ with tab_resumen:
         # )
         # --- E) Figura combinada ---
         # Colores por umbral para los puntos
+        
         pct = resumen_mes["Porc_Retrasado"].values
         colors = np.where(
             pct < 15,
@@ -515,6 +799,7 @@ with tab_resumen:
         )
 
         fig = go.Figure()
+        
 
         # ==========================
         # BARRAS = Total de vuelos (CON texto dentro)
@@ -547,7 +832,7 @@ with tab_resumen:
             ),
             text=[f"{v:.2f}%" for v in resumen_mes["Porc_Retrasado"]],
             textposition="bottom center",             # <--- ya no se pisa con el texto de la barra
-            textfont=dict(size=11),
+            textfont=dict(color="white", size=12),
             yaxis="y2",
             hovertemplate="<b>%{x}</b><br>% Retrasos: %{y:.2f}%<extra></extra>"
         ))
@@ -576,7 +861,7 @@ with tab_resumen:
                 dict(
                     type="line", xref="paper", x0=0, x1=1, yref="y2",
                     y0=promedio_retrasos_anual, y1=promedio_retrasos_anual,
-                    line=dict(color="#00838F", width=2, dash="dot")
+                    line=dict(color="#090CE8", width=4, dash="dot")
                 ),
             ]
         )
@@ -627,6 +912,9 @@ with tab_resumen:
 
 
     st.markdown("---")
+    
+    
+    
     # % retrasos por mes
     st.markdown("### % de retrasos por mes (llegada)")
 
