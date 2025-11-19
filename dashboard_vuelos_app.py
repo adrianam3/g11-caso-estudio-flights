@@ -864,77 +864,6 @@ with tab_resumen:
                 f"**{porc_en_rango:.1f}%** de los vuelos considerados en este histograma."
             )
         
-    # ==========================
-    # Ranking de aerolíneas por % de retrasos (> 15 min)
-    # ==========================
-    st.markdown("### Aerolíneas con mayor porcentaje de vuelos retrasados (> 15 min)")
-
-    # Detectamos el nombre de la columna de aerolínea (ajusta si tu dataframe usa otro nombre)
-    col_aerolinea = "AIRLINE_NAME" if "AIRLINE_NAME" in df.columns else "AIRLINE"
-
-    if ("ARRIVAL_DELAY" not in df.columns) or (col_aerolinea not in df.columns):
-        st.warning("No se encontraron las columnas necesarias para el ranking de aerolíneas.")
-    else:
-        df_air = df[[col_aerolinea, "ARRIVAL_DELAY"]].dropna().copy()
-
-        if df_air.empty:
-            st.info("No hay datos de vuelos para generar el ranking con los filtros actuales.")
-        else:
-            # Variable retrasado > 15 min
-            df_air["RETRASADO_15"] = df_air["ARRIVAL_DELAY"] > 15
-
-            resumen_air = (
-                df_air.groupby(col_aerolinea, observed=True)["RETRASADO_15"]
-                .agg(
-                    Total_vuelos="size",
-                    Porc_retrasados=lambda s: s.mean() * 100,
-                )
-                .reset_index()
-            )
-
-            # Opcional: filtrar aerolíneas con muy pocos vuelos para evitar ruido
-            resumen_air = resumen_air[resumen_air["Total_vuelos"] >= 100]
-
-            if resumen_air.empty:
-                st.info("No hay aerolíneas con suficientes vuelos para mostrar el ranking.")
-            else:
-                # Ordenar por % de retrasos (descendente) y tomar TOP 10
-                resumen_air = resumen_air.sort_values("Porc_retrasados", ascending=False).head(10)
-
-                fig_rank = px.bar(
-                    resumen_air,
-                    x="Porc_retrasados",
-                    y=col_aerolinea,
-                    orientation="h",
-                    title="Top 10 aerolíneas por porcentaje de vuelos retrasados (> 15 min)",
-                    labels={
-                        col_aerolinea: "Aerolínea",
-                        "Porc_retrasados": "% de vuelos retrasados (> 15 min)",
-                    },
-                    text=resumen_air["Porc_retrasados"].map(lambda x: f"{x:.1f}%"),
-                    color="Porc_retrasados",
-                    color_continuous_scale="Reds",
-                )
-
-                fig_rank.update_traces(textposition="outside")
-
-                fig_rank.update_layout(
-                    plot_bgcolor="rgba(255, 248, 225, 0.6)",  # mismo estilo suave que el scatter/histo
-                    xaxis_title="% de vuelos retrasados (> 15 min)",
-                    yaxis_title="Aerolínea",
-                    coloraxis_showscale=False,
-                    margin=dict(l=80, r=40, t=80, b=40),
-                )
-
-                st.plotly_chart(fig_rank, use_container_width=True)
-
-                st.caption(
-                    "🛈 Se muestran las aerolíneas con al menos **100 vuelos** en el periodo filtrado, "
-                    "ordenadas por mayor porcentaje de vuelos con retraso superior a 15 minutos."
-                )
-
-
-    st.markdown("---")
 
 
     # ==========================
@@ -1224,54 +1153,126 @@ with tab_resumen:
 
     st.markdown("---")
     
-    
-    
-    # % retrasos por mes
-    st.markdown("### % de retrasos por mes (llegada)")
+    # ==========================
+    # Ranking de aerolíneas por % de retrasos (> 15 min)
+    # ==========================
+    st.markdown("### Aerolíneas con mayor porcentaje de vuelos retrasados (> 15 min)")
 
-    df_mes = (
-        df.groupby("MONTH", observed=True)["RETRASADO_LLEGADA"]
-        .mean()
-        .reset_index()
-        .rename(columns={"RETRASADO_LLEGADA": "porc_retraso"})
-    )
-    df_mes["porc_retraso"] = df_mes["porc_retraso"] * 100
+    # Detectamos el nombre de la columna de aerolínea (ajusta si tu dataframe usa otro nombre)
+    col_aerolinea = "AIRLINE_NAME" if "AIRLINE_NAME" in df.columns else "AIRLINE"
 
-    fig_mes = px.bar(
-        df_mes,
-        x="MONTH",
-        y="porc_retraso",
-        labels={"MONTH": "Mes", "porc_retraso": "% vuelos con retraso de llegada"},
-        title="% de vuelos con retraso de llegada por mes",
-        text=df_mes["porc_retraso"].round(1).astype(str) + "%",
-    )
-    st.plotly_chart(fig_mes, use_container_width=True)
-
-    # Histograma de retraso en llegada
-    st.markdown("### Distribución del retraso en llegada (minutos)")
-
-    df_delay = df[df["ARRIVAL_DELAY"].notna() & (df["ARRIVAL_DELAY"] > -20) & (df["ARRIVAL_DELAY"] < 300)]
-    if not df_delay.empty:
-        fig_hist = px.histogram(
-            df_delay,
-            x="ARRIVAL_DELAY",
-            nbins=60,
-            labels={"ARRIVAL_DELAY": "Retraso en llegada (min)"},
-            title="Histograma de retraso en llegada (entre -20 y 300 min)",
-        )
-        st.plotly_chart(fig_hist, use_container_width=True)
+    if ("ARRIVAL_DELAY" not in df.columns) or (col_aerolinea not in df.columns):
+        st.warning("No se encontraron las columnas necesarias para el ranking de aerolíneas.")
     else:
-        st.info("No hay datos de ARRIVAL_DELAY válidos para mostrar el histograma.")
+        df_air = df[[col_aerolinea, "ARRIVAL_DELAY"]].dropna().copy()
 
-    # Ranking de aerolíneas por puntualidad
-    st.markdown("### Ranking de aerolíneas por % de retrasos en llegada")
+        if df_air.empty:
+            st.info("No hay datos de vuelos para generar el ranking con los filtros actuales.")
+        else:
+            # Variable retrasado > 15 min
+            df_air["RETRASADO_15"] = df_air["ARRIVAL_DELAY"] > 15
 
-    fig_rank_aero = crear_barra_porcentaje_retraso(
-        df, dim="AIRLINE_NAME", col_retraso="RETRASADO_LLEGADA",
-        titulo="% de vuelos con retraso en llegada por aerolínea",
-        x_label="Aerolínea"
-    )
-    st.plotly_chart(fig_rank_aero, use_container_width=True)
+            resumen_air = (
+                df_air.groupby(col_aerolinea, observed=True)["RETRASADO_15"]
+                .agg(
+                    Total_vuelos="size",
+                    Porc_retrasados=lambda s: s.mean() * 100,
+                )
+                .reset_index()
+            )
+
+            # Opcional: filtrar aerolíneas con muy pocos vuelos para evitar ruido
+            resumen_air = resumen_air[resumen_air["Total_vuelos"] >= 100]
+
+            if resumen_air.empty:
+                st.info("No hay aerolíneas con suficientes vuelos para mostrar el ranking.")
+            else:
+                # Ordenar por % de retrasos (descendente) y tomar TOP 10
+                resumen_air = resumen_air.sort_values("Porc_retrasados", ascending=False).head(10)
+
+                fig_rank = px.bar(
+                    resumen_air,
+                    x="Porc_retrasados",
+                    y=col_aerolinea,
+                    orientation="h",
+                    title="Top 10 aerolíneas por porcentaje de vuelos retrasados (> 15 min)",
+                    labels={
+                        col_aerolinea: "Aerolínea",
+                        "Porc_retrasados": "% de vuelos retrasados (> 15 min)",
+                    },
+                    text=resumen_air["Porc_retrasados"].map(lambda x: f"{x:.1f}%"),
+                    color="Porc_retrasados",
+                    color_continuous_scale="Reds",
+                )
+
+                fig_rank.update_traces(textposition="outside")
+
+                fig_rank.update_layout(
+                    plot_bgcolor="rgba(255, 248, 225, 0.6)",  # mismo estilo suave que el scatter/histo
+                    xaxis_title="% de vuelos retrasados (> 15 min)",
+                    yaxis_title="Aerolínea",
+                    coloraxis_showscale=False,
+                    margin=dict(l=80, r=40, t=80, b=40),
+                )
+
+                st.plotly_chart(fig_rank, use_container_width=True)
+
+                st.caption(
+                    "🛈 Se muestran las aerolíneas con al menos **100 vuelos** en el periodo filtrado, "
+                    "ordenadas por mayor porcentaje de vuelos con retraso superior a 15 minutos."
+                )
+
+
+    st.markdown("---")
+    
+    
+    # # % retrasos por mes
+    # st.markdown("### % de retrasos por mes (llegada)")
+
+    # df_mes = (
+    #     df.groupby("MONTH", observed=True)["RETRASADO_LLEGADA"]
+    #     .mean()
+    #     .reset_index()
+    #     .rename(columns={"RETRASADO_LLEGADA": "porc_retraso"})
+    # )
+    # df_mes["porc_retraso"] = df_mes["porc_retraso"] * 100
+
+    # fig_mes = px.bar(
+    #     df_mes,
+    #     x="MONTH",
+    #     y="porc_retraso",
+    #     labels={"MONTH": "Mes", "porc_retraso": "% vuelos con retraso de llegada"},
+    #     title="% de vuelos con retraso de llegada por mes",
+    #     text=df_mes["porc_retraso"].round(1).astype(str) + "%",
+    # )
+    # st.plotly_chart(fig_mes, use_container_width=True)
+
+    # # Histograma de retraso en llegada
+    # st.markdown("### Distribución del retraso en llegada (minutos)")
+
+    # df_delay = df[df["ARRIVAL_DELAY"].notna() & (df["ARRIVAL_DELAY"] > -20) & (df["ARRIVAL_DELAY"] < 300)]
+    # if not df_delay.empty:
+    #     fig_hist = px.histogram(
+    #         df_delay,
+    #         x="ARRIVAL_DELAY",
+    #         nbins=60,
+    #         labels={"ARRIVAL_DELAY": "Retraso en llegada (min)"},
+    #         title="Histograma de retraso en llegada (entre -20 y 300 min)",
+    #     )
+    #     st.plotly_chart(fig_hist, use_container_width=True)
+    # else:
+    #     st.info("No hay datos de ARRIVAL_DELAY válidos para mostrar el histograma.")
+
+    # # Ranking de aerolíneas por puntualidad
+    # st.markdown("### Ranking de aerolíneas por % de retrasos en llegada")
+
+    # fig_rank_aero = crear_barra_porcentaje_retraso(
+    #     df, dim="AIRLINE_NAME", col_retraso="RETRASADO_LLEGADA",
+    #     titulo="% de vuelos con retraso en llegada por aerolínea",
+    #     x_label="Aerolínea"
+    # )
+    # st.plotly_chart(fig_rank_aero, use_container_width=True)
+
 
 
 # ============================
