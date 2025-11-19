@@ -481,8 +481,6 @@ with tab_resumen:
     st.markdown("---")
     st.markdown("---")
 
-    st.markdown("---")
-
     # ==========================
     # Relación entre retraso en salida y llegada (umbral 15 minutos)
     # ==========================
@@ -519,15 +517,15 @@ with tab_resumen:
             df_scatter["CATEGORIA_15"] = df_scatter.apply(combinar_cat, axis=1)
 
             # Muestra aleatoria para no saturar el navegador
-            max_puntos = 20000
+            max_puntos = 50000
             if len(df_scatter) > max_puntos:
                 df_scatter = df_scatter.sample(max_puntos, random_state=42)
 
-            # Rangos amplios (como el primer gráfico) usando percentil 1–99
+            # === RANGOS como en la versión que te gustaba ===
+            # percentil 1–99 + un poco de aire
             x_min, x_max = df_scatter["DEPARTURE_DELAY"].quantile([0.01, 0.99])
             y_min, y_max = df_scatter["ARRIVAL_DELAY"].quantile([0.01, 0.99])
 
-            # Un poco de aire alrededor
             x_min = float(x_min) - 5
             x_max = float(x_max) + 5
             y_min = float(y_min) - 5
@@ -556,69 +554,35 @@ with tab_resumen:
                 opacity=0.6,
             )
 
-            # ---------- Cuadrantes pastel usando yref='paper' ----------
-            # Normalizamos la posición del umbral 15 min en el eje Y a [0, 1]
-            # para poder usar yref='paper'
-            y_frac = (15 - y_min) / (y_max - y_min)
-            y_frac = max(0, min(1, y_frac))  # lo limitamos entre 0 y 1
-
-            quadrant_shapes = [
-                # Abajo-izquierda: salida y llegada a tiempo
-                dict(
-                    type="rect", xref="x", yref="paper",
-                    x0=x_min, x1=15,
-                    y0=0, y1=y_frac,
-                    fillcolor="rgba(76, 175, 80, 0.10)",  # verde suave
-                    line_width=0,
-                    layer="below",
-                ),
-                # Abajo-derecha: salida retrasada, llegada a tiempo
-                dict(
-                    type="rect", xref="x", yref="paper",
-                    x0=15, x1=x_max,
-                    y0=0, y1=y_frac,
-                    fillcolor="rgba(3, 169, 244, 0.10)",  # azul suave
-                    line_width=0,
-                    layer="below",
-                ),
-                # Arriba-izquierda: salida a tiempo, llegada retrasada
-                dict(
-                    type="rect", xref="x", yref="paper",
-                    x0=x_min, x1=15,
-                    y0=y_frac, y1=1,
-                    fillcolor="rgba(255, 193, 7, 0.12)",  # amarillo suave
-                    line_width=0,
-                    layer="below",
-                ),
-                # Arriba-derecha: salida y llegada retrasadas
-                dict(
-                    type="rect", xref="x", yref="paper",
-                    x0=15, x1=x_max,
-                    y0=y_frac, y1=1,
-                    fillcolor="rgba(244, 67, 54, 0.10)",  # rojo suave
-                    line_width=0,
-                    layer="below",
-                ),
-            ]
-
-            # Líneas de referencia en el umbral de 15 minutos (color gris azulado)
-            linea_umbral_color = "#455A64"
+            # Líneas de referencia en el umbral de 15 minutos (gris azulado)
+            linea_umbral_color = "#D218AD"
             fig_rel.add_hline(y=15, line_dash="dot", line_color=linea_umbral_color, line_width=2)
             fig_rel.add_vline(x=15, line_dash="dot", line_color=linea_umbral_color, line_width=2)
 
+            # Fondo único suave para todo el gráfico
             fig_rel.update_layout(
                 xaxis=dict(range=[x_min, x_max]),
                 yaxis=dict(range=[y_min, y_max]),
                 legend_title="Categoría",
-                shapes=quadrant_shapes,
+                plot_bgcolor="rgba(255, 248, 225, 0.6)",  # beige muy suave
             )
 
             st.plotly_chart(fig_rel, use_container_width=True)
+
+#             st.caption(
+#                 """
+# 🟩 Verde: salida y llegada a tiempo (≤ 15 min)  
+# 🟦 Azul: salida retrasada, llegada a tiempo (recupera retraso)  
+# 🟨 Amarillo: salida a tiempo, llegada retrasada  
+# 🟥 Rojo: salida y llegada retrasadas (> 15 min)
+# """
+#             )
 
     except KeyError as e:
         st.warning(f"No se pudo generar el gráfico de relación salida vs llegada: {e}")
 
     st.markdown("---")
+
 
     
 
