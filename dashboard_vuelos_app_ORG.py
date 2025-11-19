@@ -65,106 +65,6 @@ st.caption("Caso de Estudio | Predicción de Retrasos de Vuelos")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_PATH = os.path.join(BASE_DIR, "data", "processed", "flights_clean.csv")
 
-# -------------------------
-# Config y rutas (ajustadas a tu ruta)
-# -------------------------
-st.set_page_config(page_title="Predicción de Vuelos", layout="wide")
-PROJECT_ROOT = Path(__file__).resolve().parent
-
-MODELS_DIR = PROJECT_ROOT / "models"
-MODEL_PATH = MODELS_DIR / "flight_delay_lgbm.joblib"
-PREPROCESSOR_PATH = MODELS_DIR / "flight_delay_preprocessors.joblib"
-
-# Log de predicciones
-PREDICTIONS_LOG = PROJECT_ROOT / "predictions_log.csv"
-
-# -------------------------
-# Diccionario de aerolíneas (opcionalmente ampliable)
-# -------------------------
-AIRLINES_FULL = {
-    "AA": "American Airlines",
-    "DL": "Delta Air Lines",
-    "UA": "United Airlines",
-    "AS": "Alaska Airlines",
-    "WN": "Southwest Airlines",
-    "B6": "JetBlue",
-    "NK": "Spirit Airlines",
-    "F9": "Frontier Airlines",
-    # añade los que desees
-}
-
-def hhmm_to_hhmmss(v):
-    try:
-        v = int(v)
-        h = v // 100
-        m = v % 100
-        return f"{h:02d}:{m:02d}:00"
-    except Exception:
-        return "N/A"
-
-def ensure_log():
-    if not PREDICTIONS_LOG.exists():
-        pd.DataFrame(columns=[
-            "timestamp_utc","airline","origin_code","origin_name","dest_code","dest_name",
-            "month","day_of_week","scheduled_dep","scheduled_arr","scheduled_time","distance","prob_delay"
-        ]).to_csv(PREDICTIONS_LOG, index=False)
-
-def append_log(record: dict):
-    try:
-        ensure_log()
-        df_old = pd.read_csv(PREDICTIONS_LOG)
-        df_new = pd.concat([df_old, pd.DataFrame([record])], ignore_index=True)
-        df_new.to_csv(PREDICTIONS_LOG, index=False)
-    except Exception as e:
-        st.warning(f"No se pudo guardar el log de predicción: {e}")
-
-def get_log_bytes():
-    if PREDICTIONS_LOG.exists():
-        return PREDICTIONS_LOG.read_bytes()
-    return None
-
-# -------------------------
-# 1) Cargar artefactos
-# -------------------------
-@st.cache_resource
-def load_artifacts():
-    try:
-        preprocessors = None
-        model = None
-        if PREPROCESSOR_PATH.exists():
-            preprocessors = joblib.load(PREPROCESSOR_PATH)
-        else:
-            st.warning(f"No se encontró {PREPROCESSOR_PATH.name} en /models/")
-
-        if MODEL_PATH.exists():
-            try:
-                model = joblib.load(MODEL_PATH)
-            except Exception as e:
-                st.warning(f"No se pudo cargar el modelo: {e}")
-                st.warning("Si aparece 'Booster' object has no attribute 'handle' o errores de dll, reinstala la versión de lightgbm con la que entrenaste.")
-                model = None
-        else:
-            st.warning(f"No se encontró {MODEL_PATH.name} en /models/")
-
-        if model is None or preprocessors is None:
-            return None
-
-        artifacts = {
-            "model": model,
-            "label_encoders": preprocessors.get("label_encoders", {}),
-            "scaler": preprocessors.get("scaler", None),
-            "cat_cols": preprocessors.get("cat_features_names", []),
-            "num_cols": preprocessors.get("num_features_names", [])
-        }
-        artifacts["feature_order"] = artifacts["cat_cols"] + artifacts["num_cols"]
-        return artifacts
-
-    except Exception as e:
-        st.error(f"Error al cargar artefactos: {e}")
-        return None
-
-artifacts = load_artifacts()
-
 
 @st.cache_data
 def cargar_datos(path: str, n_muestra: int = 5000, seed: int = 42) -> pd.DataFrame:
@@ -185,106 +85,6 @@ try:
 except FileNotFoundError:
     st.error(f"No se encontró el archivo en: {DATA_PATH}")
     st.stop()
-    
-def cargar_tabla_ruta():
-    # tabla agregada por ruta (PARA PREDICCIONES)
-    tabla = (
-        flights.groupby(["AIRLINE","ORIGIN_AIRPORT","DESTINATION_AIRPORT"], dropna=False)
-          .agg(DISTANCIA_HAV=("DISTANCE","mean"),
-               SCHEDULED_TIME=("SCHEDULED_TIME","median"),
-               SCHEDULED_ARRIVAL=("SCHEDULED_ARRIVAL","median"))
-          .reset_index()
-    )
-
-    for c in ["DISTANCIA_HAV","SCHEDULED_TIME","SCHEDULED_ARRIVAL"]:
-        if c in tabla.columns:
-            tabla[c] = pd.to_numeric(tabla[c], errors="coerce")
-
-    return tabla
-
-tabla_rutas = cargar_tabla_ruta()
-#
-# PREDICCIONES
-# 
-
-# -------------------------
-# Preprocess para inference
-# -------------------------
-def preprocess_data_for_api(df: pd.DataFrame, artifacts: dict) -> pd.DataFrame:
-    df = df.copy()
-    if artifacts is None:
-        raise ValueError("Artifacts is None.")
-
-    label_encoders = artifacts["label_encoders"]
-    scaler = artifacts["scaler"]
-    CAT_COLS = artifacts["cat_cols"]
-    NUM_COLS = artifacts["num_cols"]
-    FINAL_FEATURE_ORDER = artifacts["feature_order"]
-
-    # RUTA
-    df["RUTA"] = df["ORIGIN_AIRPORT"].astype(str) + "_" + df["DESTINATION_AIRPORT"].astype(str)
-
-    # SALIDA cíclica
-    sched_dep = pd.to_numeric(df["SCHEDULED_DEPARTURE"], errors="coerce").fillna(0).astype(int)
-    hs = (sched_dep // 100).clip(0,23)
-    ms = (sched_dep % 100).clip(0,59)
-    minuto_dia_salida = hs * 60 + ms
-    df["SALIDA_SIN"] = np.sin(2 * np.pi * minuto_dia_salida / (24*60))
-    df["SALIDA_COS"] = np.cos(2 * np.pi * minuto_dia_salida / (24*60))
-
-    # LLEGADA cíclica
-    sched_arr = pd.to_numeric(df.get("SCHEDULED_ARRIVAL", 0), errors="coerce").fillna(0).astype(int)
-    hl = (sched_arr // 100).clip(0,23)
-    ml = (sched_arr % 100).clip(0,59)
-    minuto_dia_llegada = hl * 60 + ml
-    df["LLEGADA_SIN"] = np.sin(2 * np.pi * minuto_dia_llegada / (24*60))
-    df["LLEGADA_COS"] = np.cos(2 * np.pi * minuto_dia_llegada / (24*60))
-
-    # Mes cíclico
-    df["MONTH_SIN"] = np.sin(2 * np.pi * df["MONTH"].astype(float) / 12)
-    df["MONTH_COS"] = np.cos(2 * np.pi * df["MONTH"].astype(float) / 12)
-
-    # DISTANCIA_HAV
-    if "DISTANCE" in df.columns and "DISTANCIA_HAV" not in df.columns:
-        df["DISTANCIA_HAV"] = df["DISTANCE"]
-
-    # Label encoding con manejo de <unknown>
-    for col in CAT_COLS:
-        if col in label_encoders:
-            le = label_encoders[col]
-            classes_set = set([str(x) for x in le.classes_])
-            df[col] = df[col].astype(str).apply(lambda x: x if x in classes_set else "<unknown>")
-            try:
-                df[col] = le.transform(df[col])
-            except Exception:
-                mapping = {c:i for i,c in enumerate(le.classes_)}
-                df[col] = df[col].apply(lambda x: mapping.get(x, mapping.get("<unknown>", 0)))
-        else:
-            if col not in df.columns:
-                df[col] = 0
-
-    # Scaling numérico (con fallback)
-    cols_to_scale = [c for c in NUM_COLS if c in df.columns]
-    if scaler is not None and len(cols_to_scale) > 0:
-        try:
-            df[cols_to_scale] = scaler.transform(df[cols_to_scale])
-        except Exception:
-            try:
-                if hasattr(scaler, "mean_") and hasattr(scaler, "scale_"):
-                    for i,c in enumerate(cols_to_scale):
-                        mean_i = scaler.mean_[i] if i < len(scaler.mean_) else 0
-                        scale_i = scaler.scale_[i] if i < len(scaler.scale_) else 1
-                        df[c] = (df[c] - mean_i) / (scale_i + 1e-12)
-            except Exception:
-                pass
-
-    # Asegurar columnas finales
-    for col in FINAL_FEATURE_ORDER:
-        if col not in df.columns:
-            df[col] = 0
-
-    X = df[FINAL_FEATURE_ORDER].copy()
-    return X
 
 
 # ============================
@@ -432,8 +232,8 @@ def crear_barra_porcentaje_retraso(df_group, dim, col_retraso, titulo, x_label):
 # TABS PRINCIPALES
 # ============================
 
-tab_resumen, tab_aerolineas, tab_aeropuertos, tab_tiempo, tab_causas, tab_prediccion = st.tabs(
-    ["Resumen", "Aerolíneas", "Aeropuertos", "Tiempo", "Causas de retraso", "Predicción de retrasos"]
+tab_resumen, tab_aerolineas, tab_aeropuertos, tab_tiempo, tab_causas = st.tabs(
+    ["Resumen", "Aerolíneas", "Aeropuertos", "Tiempo", "Causas de retraso"]
 )
 
 # ============================
@@ -791,79 +591,79 @@ with tab_resumen:
 # ==========================
 # Histograma de retraso en llegada
 # ==========================
-    st.markdown("### Histograma de retraso en llegada")
+st.markdown("### Histograma de retraso en llegada")
 
-    if "ARRIVAL_DELAY" not in df.columns:
-        st.warning("El dataset no contiene la columna ARRIVAL_DELAY.")
+if "ARRIVAL_DELAY" not in df.columns:
+    st.warning("El dataset no contiene la columna ARRIVAL_DELAY.")
+else:
+    # Filtrar rango razonable para el histograma
+    delay_min, delay_max = -20, 300
+    df_hist = (
+        df[df["ARRIVAL_DELAY"].between(delay_min, delay_max)]
+        [["ARRIVAL_DELAY"]]
+        .dropna()
+        .copy()
+    )
+
+    if df_hist.empty:
+        st.info("No hay datos de retraso en llegada en el rango seleccionado.")
     else:
-        # Filtrar rango razonable para el histograma
-        delay_min, delay_max = -20, 300
-        df_hist = (
-            df[df["ARRIVAL_DELAY"].between(delay_min, delay_max)]
-            [["ARRIVAL_DELAY"]]
-            .dropna()
-            .copy()
+        total_vuelos_hist = len(df_hist)
+
+        # Vuelos considerados "a tiempo" dentro de [-15, 15] minutos
+        rango_inf, rango_sup = -15, 15
+        en_rango = df_hist[
+            df_hist["ARRIVAL_DELAY"].between(rango_inf, rango_sup)
+        ].shape[0]
+        porc_en_rango = en_rango / total_vuelos_hist * 100
+
+        # Histograma con Plotly
+        fig_hist = px.histogram(
+            df_hist,
+            x="ARRIVAL_DELAY",
+            nbins=50,
+            title=f"Histograma de retraso en llegada (entre {delay_min} y {delay_max} min)",
+            labels={
+                "ARRIVAL_DELAY": "Retraso en llegada (min)",
+                "count": "Número de vuelos",
+            },
         )
 
-        if df_hist.empty:
-            st.info("No hay datos de retraso en llegada en el rango seleccionado.")
-        else:
-            total_vuelos_hist = len(df_hist)
+        # Líneas de referencia: 0 y +15 minutos
+        linea_umbral_color = "#455A64"  # gris azulado
+        fig_hist.add_vline(
+            x=0,
+            line_dash="dot",
+            line_color="#9E9E9E",
+            line_width=1,
+            annotation_text="0 min",
+            annotation_position="top left",
+        )
+        fig_hist.add_vline(
+            x=15,
+            line_dash="dot",
+            line_color=linea_umbral_color,
+            line_width=2,
+            annotation_text="+15 min",
+            annotation_position="top right",
+        )
 
-            # Vuelos considerados "a tiempo" dentro de [-15, 15] minutos
-            rango_inf, rango_sup = -15, 15
-            en_rango = df_hist[
-                df_hist["ARRIVAL_DELAY"].between(rango_inf, rango_sup)
-            ].shape[0]
-            porc_en_rango = en_rango / total_vuelos_hist * 100
+        # Fondo suave para todo el gráfico (similar al scatter)
+        fig_hist.update_layout(
+            plot_bgcolor="rgba(255, 248, 225, 0.6)",  # beige claro
+            xaxis_title="Retraso en llegada (min)",
+            yaxis_title="Número de vuelos",
+        )
 
-            # Histograma con Plotly
-            fig_hist = px.histogram(
-                df_hist,
-                x="ARRIVAL_DELAY",
-                nbins=50,
-                title=f"Histograma de retraso en llegada (entre {delay_min} y {delay_max} min)",
-                labels={
-                    "ARRIVAL_DELAY": "Retraso en llegada (min)",
-                    "count": "Número de vuelos",
-                },
-            )
+        st.plotly_chart(fig_hist, use_container_width=True)
 
-            # Líneas de referencia: 0 y +15 minutos
-            linea_umbral_color = "#455A64"  # gris azulado
-            fig_hist.add_vline(
-                x=0,
-                line_dash="dot",
-                line_color="#9E9E9E",
-                line_width=1,
-                annotation_text="0 min",
-                annotation_position="top left",
-            )
-            fig_hist.add_vline(
-                x=15,
-                line_dash="dot",
-                line_color=linea_umbral_color,
-                line_width=2,
-                annotation_text="+15 min",
-                annotation_position="top right",
-            )
-
-            # Fondo suave para todo el gráfico (similar al scatter)
-            fig_hist.update_layout(
-                plot_bgcolor="rgba(255, 248, 225, 0.6)",  # beige claro
-                xaxis_title="Retraso en llegada (min)",
-                yaxis_title="Número de vuelos",
-            )
-
-            st.plotly_chart(fig_hist, use_container_width=True)
-
-            # Texto explicativo con el % dentro del umbral
-            st.caption(
-                f"🛈 En el rango [{rango_inf} min, {rango_sup} min] se encuentran "
-                f"**{en_rango:,} vuelos**, lo que representa aproximadamente "
-                f"**{porc_en_rango:.1f}%** de los vuelos considerados en este histograma."
-            )
-        
+        # Texto explicativo con el % dentro del umbral
+        st.caption(
+            f"🛈 En el rango [{rango_inf} min, {rango_sup} min] se encuentran "
+            f"**{en_rango:,} vuelos**, lo que representa aproximadamente "
+            f"**{porc_en_rango:.1f}%** de los vuelos considerados en este histograma."
+        )
+    
     # ==========================
     # Ranking de aerolíneas por % de retrasos (> 15 min)
     # ==========================
@@ -1600,172 +1400,3 @@ with tab_causas:
                 top_causas[["MOTIVO_RETRASO", "TOTAL_VUELOS_RETRASADOS", "porc_acum"]]
             )
 
-# -------------------------
-# TAB 6 - Predicción interactiva
-# -------------------------
-with tab_prediccion:
-    st.header("Simulador de Vuelos (Modelo de Planificación)")
-    st.markdown("Introduce los detalles que conoce el pasajero: aerolínea, origen, destino, mes, día y hora de salida (HH:MM).")
-    st.markdown("La hora de llegada no se ingresa; se usa la mediana histórica. El tiempo programado y la distancia se muestran desde el histórico.")
-
-    if flights is None or flights.empty:
-        st.warning("No hay datos históricos cargados. Revisa la ruta al CSV en la barra lateral.")
-    else:
-        # construir mapeos para mostrar "COD - Nombre"
-        origen_df = flights[["ORIGIN_AIRPORT","ORIGEN_CIUDAD"]].drop_duplicates().rename(columns={"ORIGIN_AIRPORT":"code","ORIGEN_CIUDAD":"name"})
-        destino_df = flights[["DESTINATION_AIRPORT","DEST_CIUDAD"]].drop_duplicates().rename(columns={"DESTINATION_AIRPORT":"code","DEST_CIUDAD":"name"})
-
-        origen_options = {}
-        for _, r in origen_df.iterrows():
-            label = f"{r['code']} — {r['name']}" if pd.notna(r['name']) else f"{r['code']}"
-            origen_options[label] = r['code']
-
-        destino_options = {}
-        for _, r in destino_df.iterrows():
-            label = f"{r['code']} — {r['name']}" if pd.notna(r['name']) else f"{r['code']}"
-            destino_options[label] = r['code']
-
-        # aerolíneas: mostrar "CODE - FullName" si está en AIRLINES_FULL, si no mostrar "CODE"
-        airline_codes = sorted(flights["AIRLINE"].dropna().unique().tolist())
-        airline_options = []
-        for c in airline_codes:
-            if c in AIRLINES_FULL:
-                airline_options.append(f"{c} — {AIRLINES_FULL[c]}")
-            else:
-                airline_options.append(f"{c} — {c}")
-
-        # layout 3 columnas
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            airline_sel = st.selectbox("Aerolínea", options=airline_options)
-            airline_code = str(airline_sel).split(" — ")[0].strip()
-
-            origen_sel = st.selectbox("Aeropuerto Origen", options=list(origen_options.keys()))
-            origin_code = origen_options[origen_sel]
-
-        with col2:
-            destino_sel = st.selectbox("Aeropuerto Destino", options=list(destino_options.keys()))
-            dest_code = destino_options[destino_sel]
-
-            # Mes (texto)
-            MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
-            month_idx = st.selectbox("Mes", options=list(range(1,13)), format_func=lambda x: MONTHS[x-1], index=4)
-
-            # Dia de la semana (texto)
-            DAYS = {1:"Lunes",2:"Martes",3:"Miércoles",4:"Jueves",5:"Viernes",6:"Sábado",7:"Domingo"}
-            day_of_week = st.selectbox("Día de la semana", options=[1,2,3,4,5,6,7], format_func=lambda x: DAYS[x])
-
-        with col3:
-            st.write("Hora de salida (HH:MM)")
-            hora = st.selectbox("Hora (0–23)", list(range(24)))
-            minuto = st.selectbox("Minuto (00–59)", ["{:02d}".format(i) for i in range(60)])
-
-        sched_dep = int(hora) * 100 + int(minuto)
-
-        # Buscar datos históricos por ruta
-        ruta = tabla_rutas[
-            (tabla_rutas["AIRLINE"] == airline_code) &
-            (tabla_rutas["ORIGIN_AIRPORT"] == origin_code) &
-            (tabla_rutas["DESTINATION_AIRPORT"] == dest_code)
-        ]
-        if ruta.empty:
-            ruta = tabla_rutas[
-                (tabla_rutas["ORIGIN_AIRPORT"] == origin_code) &
-                (tabla_rutas["DESTINATION_AIRPORT"] == dest_code)
-            ]
-
-        if ruta.empty:
-            st.warning("No se encontraron datos históricos para esta ruta.")
-            distancia = None
-            sched_time = None
-            sched_arr = None
-        else:
-            distancia = float(ruta["DISTANCIA_HAV"].iloc[0]) if not pd.isna(ruta["DISTANCIA_HAV"].iloc[0]) else None
-            sched_time = float(ruta["SCHEDULED_TIME"].iloc[0]) if not pd.isna(ruta["SCHEDULED_TIME"].iloc[0]) else None
-            sched_arr = int(ruta["SCHEDULED_ARRIVAL"].iloc[0]) if not pd.isna(ruta["SCHEDULED_ARRIVAL"].iloc[0]) else None
-
-            st.metric("Tiempo estimado (minutos, mediana histórica)", f"{int(sched_time):d}" if sched_time is not None else "N/A")
-            st.metric("Distancia (millas, media histórica)", f"{distancia:.1f}" if distancia is not None else "N/A")
-            if sched_arr is not None:
-                st.info(f"Hora llegada estimada (mediana histórica): **{hhmm_to_hhmmss(sched_arr)}**")
-
-        st.markdown("---")
-
-        # Botón pequeño (columna angosta para reducir tamaño visual sin CSS)
-        col_btn, col_sp = st.columns([1, 5])
-        with col_btn:
-            predict_click = st.button("Predecir Retraso", type="primary")
-
-        if predict_click:
-            if artifacts is None:
-                st.error("Artefactos del modelo no cargados. Coloca los .joblib en /models/.")
-            elif distancia is None or sched_time is None:
-                st.error("Faltan datos históricos (distancia o tiempo programado) para esta ruta.")
-            else:
-                input_data = {
-                    "MONTH": int(month_idx),
-                    "DAY_OF_WEEK": int(day_of_week),
-                    "AIRLINE": airline_code,
-                    "ORIGIN_AIRPORT": origin_code,
-                    "DESTINATION_AIRPORT": dest_code,
-                    "SCHEDULED_DEPARTURE": int(sched_dep),
-                    "SCHEDULED_ARRIVAL": int(sched_arr) if sched_arr is not None else 0,
-                    "SCHEDULED_TIME": float(sched_time),
-                    "DISTANCE": float(distancia)
-                }
-                df_input = pd.DataFrame([input_data])
-                try:
-                    Xp = preprocess_data_for_api(df_input, artifacts)
-                    model = artifacts["model"]
-                    probs = model.predict_proba(Xp)[0]
-                    prob_delay = float(probs[1])
-
-                    col_r1, col_r2 = st.columns([2,1])
-                    col_r1.metric("Probabilidad de llegar >15 min tarde", f"{prob_delay*100:.2f}%")
-                    col_r2.progress(prob_delay)
-
-                    if prob_delay > 0.708:
-                        st.error("⚠️ Retraso probable (por encima del umbral óptimo).")
-                    else:
-                        st.success("✅ Probablemente a tiempo (por debajo del umbral).")
-
-                    # Log
-                    log_entry = {
-                        "timestamp_utc": datetime.utcnow().isoformat(),
-                        "airline": airline_code,
-                        "origin_code": origin_code,
-                        "origin_name": origen_sel,
-                        "dest_code": dest_code,
-                        "dest_name": destino_sel,
-                        "month": month_idx,
-                        "day_of_week": day_of_week,
-                        "scheduled_dep": sched_dep,
-                        "scheduled_arr": int(sched_arr) if sched_arr is not None else 0,
-                        "scheduled_time": sched_time,
-                        "distance": distancia,
-                        "prob_delay": prob_delay
-                    }
-                    append_log(log_entry)
-
-                except Exception as e:
-                    st.error(f"Error en la predicción: {e}")
-                    # ayuda para error típico LightGBM/DLL
-                    if "Booster' object has no attribute 'handle" in str(e) or "lib_lightgbm.dll" in str(e) or "Could not find module" in str(e):
-                        st.info("Error típico de incompatibilidad LightGBM/DLL. Reinstala la versión de lightgbm con la que entrenaste (ej. pip install lightgbm==3.3.5).")
-                    st.exception(e)
-    
-    st.markdown("---")
-    
-     # Descargar log si existe
-    if PREDICTIONS_LOG.exists():
-        csv_bytes = get_log_bytes()
-        if csv_bytes:
-            st.download_button("⬇️ Descargar log de predicciones", data=csv_bytes, file_name="predictions_log.csv", mime="text/csv")
-    else:
-        st.info("Aún no hay predicciones registradas.")
-
-    # Mensaje artefactos
-    if artifacts is None:
-        st.warning("Artefactos del modelo no cargados. Predicción deshabilitada.")
-    else:
-        st.success("Artefactos cargados ✓")

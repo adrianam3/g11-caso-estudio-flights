@@ -791,79 +791,79 @@ with tab_resumen:
 # ==========================
 # Histograma de retraso en llegada
 # ==========================
-    st.markdown("### Histograma de retraso en llegada")
+st.markdown("### Histograma de retraso en llegada")
 
-    if "ARRIVAL_DELAY" not in df.columns:
-        st.warning("El dataset no contiene la columna ARRIVAL_DELAY.")
+if "ARRIVAL_DELAY" not in df.columns:
+    st.warning("El dataset no contiene la columna ARRIVAL_DELAY.")
+else:
+    # Filtrar rango razonable para el histograma
+    delay_min, delay_max = -20, 300
+    df_hist = (
+        df[df["ARRIVAL_DELAY"].between(delay_min, delay_max)]
+        [["ARRIVAL_DELAY"]]
+        .dropna()
+        .copy()
+    )
+
+    if df_hist.empty:
+        st.info("No hay datos de retraso en llegada en el rango seleccionado.")
     else:
-        # Filtrar rango razonable para el histograma
-        delay_min, delay_max = -20, 300
-        df_hist = (
-            df[df["ARRIVAL_DELAY"].between(delay_min, delay_max)]
-            [["ARRIVAL_DELAY"]]
-            .dropna()
-            .copy()
+        total_vuelos_hist = len(df_hist)
+
+        # Vuelos considerados "a tiempo" dentro de [-15, 15] minutos
+        rango_inf, rango_sup = -15, 15
+        en_rango = df_hist[
+            df_hist["ARRIVAL_DELAY"].between(rango_inf, rango_sup)
+        ].shape[0]
+        porc_en_rango = en_rango / total_vuelos_hist * 100
+
+        # Histograma con Plotly
+        fig_hist = px.histogram(
+            df_hist,
+            x="ARRIVAL_DELAY",
+            nbins=50,
+            title=f"Histograma de retraso en llegada (entre {delay_min} y {delay_max} min)",
+            labels={
+                "ARRIVAL_DELAY": "Retraso en llegada (min)",
+                "count": "Número de vuelos",
+            },
         )
 
-        if df_hist.empty:
-            st.info("No hay datos de retraso en llegada en el rango seleccionado.")
-        else:
-            total_vuelos_hist = len(df_hist)
+        # Líneas de referencia: 0 y +15 minutos
+        linea_umbral_color = "#455A64"  # gris azulado
+        fig_hist.add_vline(
+            x=0,
+            line_dash="dot",
+            line_color="#9E9E9E",
+            line_width=1,
+            annotation_text="0 min",
+            annotation_position="top left",
+        )
+        fig_hist.add_vline(
+            x=15,
+            line_dash="dot",
+            line_color=linea_umbral_color,
+            line_width=2,
+            annotation_text="+15 min",
+            annotation_position="top right",
+        )
 
-            # Vuelos considerados "a tiempo" dentro de [-15, 15] minutos
-            rango_inf, rango_sup = -15, 15
-            en_rango = df_hist[
-                df_hist["ARRIVAL_DELAY"].between(rango_inf, rango_sup)
-            ].shape[0]
-            porc_en_rango = en_rango / total_vuelos_hist * 100
+        # Fondo suave para todo el gráfico (similar al scatter)
+        fig_hist.update_layout(
+            plot_bgcolor="rgba(255, 248, 225, 0.6)",  # beige claro
+            xaxis_title="Retraso en llegada (min)",
+            yaxis_title="Número de vuelos",
+        )
 
-            # Histograma con Plotly
-            fig_hist = px.histogram(
-                df_hist,
-                x="ARRIVAL_DELAY",
-                nbins=50,
-                title=f"Histograma de retraso en llegada (entre {delay_min} y {delay_max} min)",
-                labels={
-                    "ARRIVAL_DELAY": "Retraso en llegada (min)",
-                    "count": "Número de vuelos",
-                },
-            )
+        st.plotly_chart(fig_hist, use_container_width=True)
 
-            # Líneas de referencia: 0 y +15 minutos
-            linea_umbral_color = "#455A64"  # gris azulado
-            fig_hist.add_vline(
-                x=0,
-                line_dash="dot",
-                line_color="#9E9E9E",
-                line_width=1,
-                annotation_text="0 min",
-                annotation_position="top left",
-            )
-            fig_hist.add_vline(
-                x=15,
-                line_dash="dot",
-                line_color=linea_umbral_color,
-                line_width=2,
-                annotation_text="+15 min",
-                annotation_position="top right",
-            )
-
-            # Fondo suave para todo el gráfico (similar al scatter)
-            fig_hist.update_layout(
-                plot_bgcolor="rgba(255, 248, 225, 0.6)",  # beige claro
-                xaxis_title="Retraso en llegada (min)",
-                yaxis_title="Número de vuelos",
-            )
-
-            st.plotly_chart(fig_hist, use_container_width=True)
-
-            # Texto explicativo con el % dentro del umbral
-            st.caption(
-                f"🛈 En el rango [{rango_inf} min, {rango_sup} min] se encuentran "
-                f"**{en_rango:,} vuelos**, lo que representa aproximadamente "
-                f"**{porc_en_rango:.1f}%** de los vuelos considerados en este histograma."
-            )
-        
+        # Texto explicativo con el % dentro del umbral
+        st.caption(
+            f"🛈 En el rango [{rango_inf} min, {rango_sup} min] se encuentran "
+            f"**{en_rango:,} vuelos**, lo que representa aproximadamente "
+            f"**{porc_en_rango:.1f}%** de los vuelos considerados en este histograma."
+        )
+    
     # ==========================
     # Ranking de aerolíneas por % de retrasos (> 15 min)
     # ==========================
@@ -1753,19 +1753,3 @@ with tab_prediccion:
                     if "Booster' object has no attribute 'handle" in str(e) or "lib_lightgbm.dll" in str(e) or "Could not find module" in str(e):
                         st.info("Error típico de incompatibilidad LightGBM/DLL. Reinstala la versión de lightgbm con la que entrenaste (ej. pip install lightgbm==3.3.5).")
                     st.exception(e)
-    
-    st.markdown("---")
-    
-     # Descargar log si existe
-    if PREDICTIONS_LOG.exists():
-        csv_bytes = get_log_bytes()
-        if csv_bytes:
-            st.download_button("⬇️ Descargar log de predicciones", data=csv_bytes, file_name="predictions_log.csv", mime="text/csv")
-    else:
-        st.info("Aún no hay predicciones registradas.")
-
-    # Mensaje artefactos
-    if artifacts is None:
-        st.warning("Artefactos del modelo no cargados. Predicción deshabilitada.")
-    else:
-        st.success("Artefactos cargados ✓")

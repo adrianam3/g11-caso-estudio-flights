@@ -1,2 +1,0 @@
-timestamp_utc,airline,origin_code,origin_name,dest_code,dest_name,month,day_of_week,scheduled_dep,scheduled_arr,scheduled_time,distance,prob_delay
-2025-11-19T05:53:29.608666,AS,LAX,LAX — Los Angeles,CLT,CLT — Charlotte,5,7,601,1458,289.0,2125.0,0.2592208523672792
