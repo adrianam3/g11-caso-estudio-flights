@@ -373,7 +373,7 @@ def main(artifacts):
 
             # Botón PREDECIR
             col_btn, col_sp = st.columns([1, 5])
-            with col_btn:
+            with col_btfn:
                 predict_click = st.button("Predecir Retraso", type="primary", key="predict_btn")
 
             if predict_click:
