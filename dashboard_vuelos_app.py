@@ -207,7 +207,7 @@ artifacts = load_artifacts()
 #             st.warning("⚠️ El artefacto no tiene 'input_features' guardado. Solo se muestran 'feature_order'.")
 # -------------------------
 @st.cache_data
-def cargar_datos(path: str, n_muestra: int = 500000, seed: int = 42) -> pd.DataFrame:
+def cargar_datos(path: str, n_muestra: int = 50000, seed: int = 42) -> pd.DataFrame:
     """
     Carga el dataset de vuelos con caché y devuelve una muestra
     aleatoria pero reproducible de n_muestra registros.
@@ -1765,10 +1765,7 @@ with tab_aeropuertos:
     st.markdown("---")
 
 
-    st.markdown("---")
-
-
-    # ================================
+     # ================================
     # Mapa de destinos (ARRIVAL_DELAY > 15)
     # ================================
     st.markdown("### Destinos con mayor % de retrasos en llegada (> 15 min)")
@@ -1810,7 +1807,7 @@ with tab_aeropuertos:
             st.info("No hay datos suficientes para el mapa de destinos con los filtros actuales.")
         else:
             # Umbral de volumen para evitar ruido visual
-            umbral = 5000
+            umbral = 500
             geo_dest_top = geo_dest[geo_dest["TOTAL"] >= umbral].copy()
 
             if geo_dest_top.empty:
@@ -1878,9 +1875,132 @@ with tab_aeropuertos:
                 )
 
                 st.plotly_chart(fig_dest, use_container_width=True)
-
-
     st.markdown("---")
+    st.markdown("---")
+    st.markdown("### % de retrasos (> 15 min) por hora de llegada y aeropuerto destino")
+
+    # Necesitamos estas columnas para el gráfico
+    columnas_necesarias = ["DEST_AEROPUERTO", "ARRIVAL_DELAY"]
+    if not all(col in df.columns for col in columnas_necesarias):
+        st.info("No se encontraron las columnas necesarias para este gráfico "
+                "(DEST_AEROPUERTO y ARRIVAL_DELAY).")
+    else:
+        df_hora = df.copy()
+
+        # -------------------------------------------------
+        # 1) Obtener HORA_LLEGADA (0–23) de la mejor fuente
+        # -------------------------------------------------
+        if "MINUTO_DIA_LLEGADA" in df_hora.columns:
+            # Si ya tienes los minutos del día, es la fuente preferida
+            df_hora = df_hora[df_hora["MINUTO_DIA_LLEGADA"].notna()].copy()
+            df_hora["HORA_LLEGADA"] = (df_hora["MINUTO_DIA_LLEGADA"] // 60).astype(int)
+        elif "SCHEDULED_ARRIVAL" in df_hora.columns:
+            # Si no hay MINUTO_DIA_LLEGADA, usamos SCHEDULED_ARRIVAL en formato HHMM
+            df_hora["SCHEDULED_ARRIVAL"] = pd.to_numeric(
+                df_hora["SCHEDULED_ARRIVAL"], errors="coerce"
+            )
+            df_hora = df_hora[df_hora["SCHEDULED_ARRIVAL"].notna()].copy()
+            df_hora["HORA_LLEGADA"] = (
+                (df_hora["SCHEDULED_ARRIVAL"] // 100)
+                .clip(0, 23)
+                .astype(int)
+            )
+        else:
+            st.info(
+                "No se encontró ninguna columna horaria (MINUTO_DIA_LLEGADA o "
+                "SCHEDULED_ARRIVAL) para calcular la hora de llegada."
+            )
+            df_hora = None
+
+        if df_hora is not None and not df_hora.empty:
+            # -------------------------------------------------
+            # 2) Etiqueta binaria de retraso ARRIVAL_DELAY > 15
+            # -------------------------------------------------
+            df_hora["ARRIVAL_DELAY"] = pd.to_numeric(
+                df_hora["ARRIVAL_DELAY"], errors="coerce"
+            )
+            df_hora = df_hora[df_hora["ARRIVAL_DELAY"].notna()].copy()
+            df_hora["RETRASADO_15"] = (df_hora["ARRIVAL_DELAY"] > 15).astype(int)
+
+            # -------------------------------------------------
+            # 3) Para que el heatmap sea legible, usamos solo
+            #    los destinos con más volumen (top 15)
+            # -------------------------------------------------
+            top_destinos = (
+                df_hora.groupby("DEST_AEROPUERTO")["RETRASADO_15"]
+                .size()
+                .nlargest(15)
+                .index
+            )
+            df_hora_top = df_hora[df_hora["DEST_AEROPUERTO"].isin(top_destinos)].copy()
+
+            if df_hora_top.empty:
+                st.info("No hay datos suficientes para mostrar el mapa de calor.")
+            else:
+                # -----------------------------------------
+                # 4) Agregación: % de retrasados por
+                #    DEST_AEROPUERTO x HORA_LLEGADA
+                # -----------------------------------------
+                resumen = (
+                    df_hora_top
+                    .groupby(["DEST_AEROPUERTO", "HORA_LLEGADA"], observed=True)["RETRASADO_15"]
+                    .agg(Total="size", Retrasados="sum")
+                    .reset_index()
+                )
+                resumen["Porc_Retrasados"] = (
+                    resumen["Retrasados"] / resumen["Total"] * 100
+                ).round(1)
+
+                # Aseguramos rango de horas 0–23
+                resumen = resumen[resumen["HORA_LLEGADA"].between(0, 23)]
+                resumen["HORA_LLEGADA"] = resumen["HORA_LLEGADA"].astype(int)
+
+                # Pivot para heatmap: filas = destino, columnas = hora
+                tabla_heat = (
+                    resumen
+                    .pivot(index="DEST_AEROPUERTO",
+                           columns="HORA_LLEGADA",
+                           values="Porc_Retrasados")
+                    .fillna(0)
+                )
+                # Ordenar destinos y horas
+                tabla_heat = tabla_heat.sort_index()
+                tabla_heat = tabla_heat.reindex(
+                    columns=sorted(tabla_heat.columns)
+                )
+
+                # -----------------------------------------
+                # 5) Mapa de calor con Plotly
+                # -----------------------------------------
+                fig_heat = px.imshow(
+                    tabla_heat,
+                    aspect="auto",
+                    color_continuous_scale="RdYlGn_r",
+                    labels={
+                        "x": "Hora de llegada (0–23)",
+                        "y": "Aeropuerto destino",
+                        "color": "% retrasos (> 15 min)"
+                    },
+                    title="% de vuelos retrasados (> 15 min) por hora de llegada "
+                          "y aeropuerto destino (Top 15 por volumen)"
+                )
+
+                # Etiquetas de 0–23 como HH:00
+                fig_heat.update_xaxes(
+                    tickmode="array",
+                    tickvals=list(range(len(tabla_heat.columns))),
+                    ticktext=[f"{h:02d}:00" for h in tabla_heat.columns],
+                )
+
+                fig_heat.update_layout(
+                    title_x=0.5,
+                    height=520,
+                    plot_bgcolor="rgba(255,248,225,0.6)",
+                    margin=dict(l=80, r=40, t=80, b=60),
+                    coloraxis_colorbar=dict(title="% retrasos")
+                )
+
+                st.plotly_chart(fig_heat, use_container_width=True)
 
 # ============================
 # TAB 4 - TIEMPO Y PATRONES
@@ -2795,37 +2915,240 @@ with tab_prediccion:
             sched_dep = int(hora) * 100 + int(minuto)
 
             # Si no hay destino válido, no permite predecir
+            # if dest_code is None:
+            #     st.warning("No hay destinos válidos para la aerolínea y origen seleccionados. Cambia aerolínea u origen.")
+            #     distancia = None
+            #     sched_time = None
+            #     sched_arr = None
+            # else:
+            #     ruta = tabla_rutas[
+            #         (tabla_rutas["AIRLINE"] == airline_code) &
+            #         (tabla_rutas["ORIGIN_AIRPORT"] == origin_code) &
+            #         (tabla_rutas["DESTINATION_AIRPORT"] == dest_code)
+            #     ]
+            #     if ruta.empty:
+            #         ruta = tabla_rutas[
+            #             (tabla_rutas["ORIGIN_AIRPORT"] == origin_code) &
+            #             (tabla_rutas["DESTINATION_AIRPORT"] == dest_code)
+            #         ]
+
+            #     if ruta.empty:
+            #         st.warning("No se encontraron datos históricos para esta ruta.")
+            #         distancia = None
+            #         sched_time = None
+            #         sched_arr = None
+            #     else:
+            #         distancia = float(ruta["DISTANCIA_HAV"].iloc[0]) if not pd.isna(ruta["DISTANCIA_HAV"].iloc[0]) else None
+            #         sched_time = float(ruta["SCHEDULED_TIME"].iloc[0]) if not pd.isna(ruta["SCHEDULED_TIME"].iloc[0]) else None
+            #         sched_arr = int(ruta["SCHEDULED_ARRIVAL"].iloc[0]) if not pd.isna(ruta["SCHEDULED_ARRIVAL"].iloc[0]) else None
+
+            #         st.metric("Tiempo estimado (minutos, mediana histórica)", f"{int(sched_time):d}" if sched_time is not None else "N/A")
+            #         st.metric("Distancia (millas, media histórica)", f"{distancia:.1f}" if distancia is not None else "N/A")
+            #         if sched_arr is not None:
+            #             st.info(f"Hora llegada estimada (mediana histórica): **{hhmm_to_hhmmss(sched_arr)}**")
+            # if dest_code is None:
+            #     st.warning(
+            #         "No hay destinos válidos para la aerolínea y origen seleccionados. "
+            #         "Cambia aerolínea u origen."
+            #     )
+            #     distancia = None
+            #     sched_time = None
+            #     sched_arr = None
+            # else:
+            #     # 1️⃣ Usar el dataframe filtrado del dashboard si existe,
+            #     #    si no, usar flights completo como respaldo
+            #     base_df = df if "df" in globals() else flights
+
+            #     # 2️⃣ Filtrar por aerolínea, origen y destino
+            #     df_ruta = base_df[
+            #         (base_df["AIRLINE"] == airline_code) &
+            #         (base_df["ORIGIN_AIRPORT"] == origin_code) &
+            #         (base_df["DESTINATION_AIRPORT"] == dest_code)
+            #     ]
+
+            #     # 3️⃣ Opcional: afinar aún más por MES y DÍA seleccionados en el simulador
+            #     #     (si quieres que dependa de esos selects también)
+            #     df_ruta = df_ruta[
+            #         (df_ruta["MONTH"] == month_idx) &
+            #         (df_ruta["DAY_OF_WEEK"] == day_of_week)
+            #     ]
+
+            #     if df_ruta.empty:
+            #         # 🔁 Respaldo: si con filtros no hay datos, usamos tabla_rutas global
+            #         ruta = tabla_rutas[
+            #             (tabla_rutas["AIRLINE"] == airline_code) &
+            #             (tabla_rutas["ORIGIN_AIRPORT"] == origin_code) &
+            #             (tabla_rutas["DESTINATION_AIRPORT"] == dest_code)
+            #         ]
+
+            #         if ruta.empty:
+            #             st.warning(
+            #                 "No se encontraron datos históricos para esta ruta con los filtros seleccionados."
+            #             )
+            #             distancia = None
+            #             sched_time = None
+            #             sched_arr = None
+            #         else:
+            #             distancia = (
+            #                 float(ruta["DISTANCIA_HAV"].iloc[0])
+            #                 if not pd.isna(ruta["DISTANCIA_HAV"].iloc[0])
+            #                 else None
+            #             )
+            #             sched_time = (
+            #                 float(ruta["SCHEDULED_TIME"].iloc[0])
+            #                 if not pd.isna(ruta["SCHEDULED_TIME"].iloc[0])
+            #                 else None
+            #             )
+            #             sched_arr = (
+            #                 int(ruta["SCHEDULED_ARRIVAL"].iloc[0])
+            #                 if not pd.isna(ruta["SCHEDULED_ARRIVAL"].iloc[0])
+            #                 else None
+            #             )
+            #     else:
+            #         # ✅ Aquí sí depende 100% de los datos seleccionados
+            #         distancia = float(df_ruta["DISTANCE"].mean()) if not df_ruta["DISTANCE"].isna().all() else None
+            #         sched_time = float(df_ruta["SCHEDULED_TIME"].median()) if not df_ruta["SCHEDULED_TIME"].isna().all() else None
+            #         sched_arr = (
+            #             int(df_ruta["SCHEDULED_ARRIVAL"].median())
+            #             if not df_ruta["SCHEDULED_ARRIVAL"].isna().all()
+            #             else None
+            #         )
+
+            #     # 4️⃣ Mostrar métricas (si se logró calcular algo)
+            #     if sched_time is not None:
+            #         st.metric(
+            #             "Tiempo estimado (minutos, mediana histórica)",
+            #             f"{int(sched_time):d}",
+            #         )
+            #     else:
+            #         st.metric(
+            #             "Tiempo estimado (minutos, mediana histórica)",
+            #             "N/A",
+            #         )
+
+            #     if distancia is not None:
+            #         st.metric(
+            #             "Distancia (millas, media histórica)",
+            #             f"{distancia:.1f}",
+            #         )
+            #     else:
+            #         st.metric(
+            #             "Distancia (millas, media histórica)",
+            #             "N/A",
+            #         )
+
+            #     if sched_arr is not None:
+            #         st.info(
+            #             f"Hora llegada estimada (mediana histórica): "
+            #             f"**{hhmm_to_hhmmss(sched_arr)}**"
+                    # )
             if dest_code is None:
-                st.warning("No hay destinos válidos para la aerolínea y origen seleccionados. Cambia aerolínea u origen.")
+                st.warning(
+                    "No hay destinos válidos para la aerolínea y origen seleccionados. "
+                    "Cambia aerolínea u origen."
+                )
                 distancia = None
                 sched_time = None
                 sched_arr = None
             else:
-                ruta = tabla_rutas[
-                    (tabla_rutas["AIRLINE"] == airline_code) &
-                    (tabla_rutas["ORIGIN_AIRPORT"] == origin_code) &
-                    (tabla_rutas["DESTINATION_AIRPORT"] == dest_code)
+                # 1️⃣ Usar el dataframe filtrado del dashboard si existe,
+                #    si no, usar flights completo como respaldo
+                base_df = df if "df" in globals() else flights
+
+                # 2️⃣ Filtrar por aerolínea, origen y destino
+                df_ruta = base_df[
+                    (base_df["AIRLINE"] == airline_code) &
+                    (base_df["ORIGIN_AIRPORT"] == origin_code) &
+                    (base_df["DESTINATION_AIRPORT"] == dest_code)
                 ]
-                if ruta.empty:
+
+                # 3️⃣ Afinar aún más por MES y DÍA seleccionados en el simulador
+                df_ruta = df_ruta[
+                    (df_ruta["MONTH"] == month_idx) &
+                    (df_ruta["DAY_OF_WEEK"] == day_of_week)
+                ]
+
+                if df_ruta.empty:
+                    # 🔁 Respaldo: si con filtros no hay datos, usamos tabla_rutas global
                     ruta = tabla_rutas[
+                        (tabla_rutas["AIRLINE"] == airline_code) &
                         (tabla_rutas["ORIGIN_AIRPORT"] == origin_code) &
                         (tabla_rutas["DESTINATION_AIRPORT"] == dest_code)
                     ]
 
-                if ruta.empty:
-                    st.warning("No se encontraron datos históricos para esta ruta.")
-                    distancia = None
-                    sched_time = None
-                    sched_arr = None
+                    if ruta.empty:
+                        st.warning(
+                            "No se encontraron datos históricos para esta ruta con los filtros seleccionados."
+                        )
+                        distancia = None
+                        sched_time = None
+                        sched_arr = None
+                    else:
+                        distancia = (
+                            float(ruta["DISTANCIA_HAV"].iloc[0])
+                            if not pd.isna(ruta["DISTANCIA_HAV"].iloc[0])
+                            else None
+                        )
+                        sched_time = (
+                            float(ruta["SCHEDULED_TIME"].iloc[0])
+                            if not pd.isna(ruta["SCHEDULED_TIME"].iloc[0])
+                            else None
+                        )
                 else:
-                    distancia = float(ruta["DISTANCIA_HAV"].iloc[0]) if not pd.isna(ruta["DISTANCIA_HAV"].iloc[0]) else None
-                    sched_time = float(ruta["SCHEDULED_TIME"].iloc[0]) if not pd.isna(ruta["SCHEDULED_TIME"].iloc[0]) else None
-                    sched_arr = int(ruta["SCHEDULED_ARRIVAL"].iloc[0]) if not pd.isna(ruta["SCHEDULED_ARRIVAL"].iloc[0]) else None
+                    # ✅ Aquí sí depende 100% de los datos seleccionados
+                    distancia = (
+                        float(df_ruta["DISTANCE"].mean())
+                        if not df_ruta["DISTANCE"].isna().all()
+                        else None
+                    )
+                    sched_time = (
+                        float(df_ruta["SCHEDULED_TIME"].median())
+                        if not df_ruta["SCHEDULED_TIME"].isna().all()
+                        else None
+                    )
 
-                    st.metric("Tiempo estimado (minutos, mediana histórica)", f"{int(sched_time):d}" if sched_time is not None else "N/A")
-                    st.metric("Distancia (millas, media histórica)", f"{distancia:.1f}" if distancia is not None else "N/A")
-                    if sched_arr is not None:
-                        st.info(f"Hora llegada estimada (mediana histórica): **{hhmm_to_hhmmss(sched_arr)}**")
+                # 4️⃣ Calcular hora de llegada a partir de:
+                #    hora de salida seleccionada + duración histórica (sched_time)
+                if sched_time is not None:
+                    # hora es int (0–23), minuto es string "00"–"59"
+                    dep_min = int(hora) * 60 + int(minuto)          # minutos desde medianoche
+                    arr_min = dep_min + int(round(sched_time))      # sumar duración en minutos
+
+                    # convertir de nuevo a HHMM (24h, manejando cruce de día)
+                    arr_hour = (arr_min // 60) % 24
+                    arr_minute = arr_min % 60
+                    sched_arr = arr_hour * 100 + arr_minute
+                else:
+                    sched_arr = None
+
+                # 5️⃣ Mostrar métricas
+                if sched_time is not None:
+                    st.metric(
+                        "Tiempo estimado (minutos, mediana histórica)",
+                        f"{int(sched_time):d}",
+                    )
+                else:
+                    st.metric(
+                        "Tiempo estimado (minutos, mediana histórica)",
+                        "N/A",
+                    )
+
+                if distancia is not None:
+                    st.metric(
+                        "Distancia (millas, media histórica)",
+                        f"{distancia:.1f}",
+                    )
+                else:
+                    st.metric(
+                        "Distancia (millas, media histórica)",
+                        "N/A",
+                    )
+
+                if sched_arr is not None:
+                    st.info(
+                        f"Hora llegada estimada (mediana histórica): "
+                        f"**{hhmm_to_hhmmss(sched_arr)}**"
+                    )
 
             st.markdown("---")
 
