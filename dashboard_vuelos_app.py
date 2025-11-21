@@ -87,8 +87,8 @@ PREDICTIONS_LOG = PROJECT_ROOT / "predictions_log.csv"
 # URL de la API FastAPI (api_prediccion.py)
 # Ajustar el host/puerto según uvicorn:
 #   uvicorn api_prediccion:app --host 0.0.0.0 --port 8000
-API_BASE_URL = "http://127.0.0.1:8000"
-# API_BASE_URL = "https://api-vuelos-1004129844878.us-central1.run.app"
+# API_BASE_URL = "http://127.0.0.1:8000"
+API_BASE_URL = "https://api-vuelos-1004129844878.us-central1.run.app"
 API_PREDICT_URL = f"{API_BASE_URL}/flights/predict-delay"
 
 def hhmm_to_hhmmss(v):
@@ -1200,7 +1200,7 @@ with tab_resumen:
                 path=["MES", "DIA_LABEL"],          # Nivel 1: Mes, Nivel 2: Día
                 values="TOTAL_RETRASADOS",
                 color="TOTAL_RETRASADOS",
-                color_continuous_scale="Greens",    # tono más fuerte = más retrasos
+                color_continuous_scale="Reds",    # tono más fuerte = más retrasos
                 hover_data={"TOTAL_RETRASADOS": ":,"},
                 title="Vuelos retrasados (> 15 min) por Mes y Día de la semana",
             )
@@ -1220,7 +1220,113 @@ with tab_resumen:
             #     "Cada rectángulo representa vuelos **retrasados más de 15 minutos**. "
             #     "El tamaño y el tono de verde indican cuántos retrasos hay por Mes y Día."
             # )
+##-->
+    # ====================================================
+    # Correlación distancia vs % de retrasos por ruta
+    # (ARRIVAL_DELAY > 15 minutos)
+    # ====================================================
 
+    st.markdown("---")
+    st.markdown("### Distancia de la ruta vs % de vuelos retrasados (> 15 min)")
+
+    # Copia defensiva del df filtrado actual del dashboard
+    df_corr = df.copy()
+
+    # Asegurar que ARRIVAL_DELAY sea numérico
+    df_corr["ARRIVAL_DELAY"] = pd.to_numeric(df_corr["ARRIVAL_DELAY"], errors="coerce")
+
+    # Bandera de retraso > 15 min
+    df_corr["RETRASADO_15"] = (df_corr["ARRIVAL_DELAY"] > 15).astype(int)
+
+    # Eliminar filas sin datos clave
+    df_corr = df_corr.dropna(
+        subset=["ORIGIN_AIRPORT", "DESTINATION_AIRPORT", "DISTANCE", "ARRIVAL_DELAY"]
+    )
+
+    if df_corr.empty:
+        st.info("No hay datos suficientes para calcular la correlación distancia vs retraso.")
+    else:
+        # Agregación por ruta (origen-destino)
+        rutas = (
+            df_corr
+            .groupby(["ORIGIN_AIRPORT", "DESTINATION_AIRPORT"], observed=True)
+            .agg(
+                dist_promedio=("DISTANCE", "mean"),
+                porc_retrasados=("RETRASADO_15", "mean"),
+                delay_promedio=("ARRIVAL_DELAY", "mean"),
+                total_vuelos=("ARRIVAL_DELAY", "size"),
+            )
+            .reset_index()
+        )
+
+        # Pasar % a 0–100
+        rutas["porc_retrasados"] = rutas["porc_retrasados"] * 100
+
+        # Etiqueta de ruta ORIGEN → DESTINO
+        rutas["RUTA"] = rutas["ORIGIN_AIRPORT"] + " → " + rutas["DESTINATION_AIRPORT"]
+
+        # Umbral de vuelos mínimos para reducir ruido visual
+        # (ajusta este valor si quieres ver más/menos puntos)
+        min_vuelos = 50
+        rutas_filtradas = rutas[rutas["total_vuelos"] >= min_vuelos].copy()
+
+        if rutas_filtradas.empty:
+            st.info(
+                "Con el filtro actual y el umbral de vuelos mínimos "
+                f"({min_vuelos}), no hay rutas suficientes para mostrar el gráfico."
+            )
+        else:
+            # Correlación simple entre distancia y % de retrasos
+            corr_val = rutas_filtradas[["dist_promedio", "porc_retrasados"]].corr().iloc[0, 1]
+
+            st.caption(
+                "Correlación Pearson distancia vs % retrasos (> 15 min): "
+                f"**{corr_val:.3f}** "
+                "(1 indica correlación positiva fuerte, -1 negativa fuerte)."
+            )
+
+            # Gráfico de dispersión
+            fig_corr = px.scatter(
+                rutas_filtradas,
+                x="dist_promedio",
+                y="porc_retrasados",
+                size="total_vuelos",
+                color="delay_promedio",
+                hover_name="RUTA",
+                hover_data={
+                    "dist_promedio": ":.0f",
+                    "porc_retrasados": ":.2f",
+                    "delay_promedio": ":.2f",
+                    "total_vuelos": ":,",
+                },
+                labels={
+                    "dist_promedio": "Distancia promedio de la ruta (millas)",
+                    "porc_retrasados": "% de vuelos retrasados (> 15 min)",
+                    "delay_promedio": "Retraso promedio en llegada (min)",
+                    "total_vuelos": "Número de vuelos",
+                },
+                title=(
+                    # "Distancia de la ruta vs % de vuelos retrasados (> 15 min)\n"
+                    "(tamaño = volumen de vuelos, color = retraso promedio)"
+                ),
+                color_continuous_scale="RdYlGn_r",  # rojo = peor, verde = mejor
+            )
+
+            fig_corr.update_traces(
+                marker=dict(opacity=0.8, line=dict(width=0.5, color="rgba(0,0,0,0.5)"))
+            )
+
+            fig_corr.update_layout(
+                xaxis=dict(title="Distancia promedio (millas)"),
+                yaxis=dict(title="% de vuelos retrasados (> 15 min)"),
+                title_x=0.5,
+                plot_bgcolor="rgba(255, 248, 225, 0.6)",
+                margin=dict(l=60, r=40, t=90, b=60),
+            )
+
+            st.plotly_chart(fig_corr, use_container_width=True)
+
+##<--
  # ============================
 # TAB 2 - AEROLÍNEAS
 # ============================
@@ -1352,55 +1458,57 @@ with tab_aerolineas:
 
     st.plotly_chart(fig_aero_lleg_15, use_container_width=True)
 
-    # -------------------------------------------------
-    # 2) Retraso promedio de los vuelos retrasados (> 15 min)
-    # -------------------------------------------------
-    st.markdown("### Retraso promedio (solo vuelos retrasados > 15 min) por aerolínea")
+    # # -------------------------------------------------
+    # # 2) Retraso promedio de los vuelos retrasados (> 15 min)
+    # # -------------------------------------------------
+    # st.markdown("### Retraso promedio (solo vuelos retrasados > 15 min) por aerolínea")
 
-    df_delay_15 = df_aero_all[df_aero_all["ARRIVAL_DELAY"] > 15].copy()
+    # df_delay_15 = df_aero_all[df_aero_all["ARRIVAL_DELAY"] > 15].copy()
 
-    if df_delay_15.empty:
-        st.info("No hay vuelos con ARRIVAL_DELAY > 15 min para calcular retraso promedio por aerolínea.")
-    else:
-        df_avg_delay_15 = (
-            df_delay_15
-            .groupby("AIRLINE_NAME", observed=True)["ARRIVAL_DELAY"]
-            .mean()
-            .reset_index()
-            .rename(columns={"ARRIVAL_DELAY": "retraso_prom_15"})
-        )
+    # if df_delay_15.empty:
+    #     st.info("No hay vuelos con ARRIVAL_DELAY > 15 min para calcular retraso promedio por aerolínea.")
+    # else:
+    #     df_avg_delay_15 = (
+    #         df_delay_15
+    #         .groupby("AIRLINE_NAME", observed=True)["ARRIVAL_DELAY"]
+    #         .mean()
+    #         .reset_index()
+    #         .rename(columns={"ARRIVAL_DELAY": "retraso_prom_15"})
+    #     )
 
-        df_avg_delay_15 = df_avg_delay_15.sort_values("retraso_prom_15", ascending=False)
+    #     df_avg_delay_15 = df_avg_delay_15.sort_values("retraso_prom_15", ascending=False)
 
-        fig_aero_delay_15 = px.bar(
-            df_avg_delay_15,
-            x="retraso_prom_15",
-            y="AIRLINE_NAME",
-            orientation="h",
-            labels={
-                "retraso_prom_15": "Retraso prom. llegada (> 15 min) [min]",
-                "AIRLINE_NAME": "Aerolínea",
-            },
-            title="Retraso promedio en llegada por aerolínea (solo vuelos > 15 min)",
-            text=df_avg_delay_15["retraso_prom_15"].round(1).astype(str),
-            color="retraso_prom_15",              # <-- degradado según el retraso promedio
-            color_continuous_scale="OrRd",        # escala naranja/rojo suave
-        )
+    #     fig_aero_delay_15 = px.bar(
+    #         df_avg_delay_15,
+    #         x="retraso_prom_15",
+    #         y="AIRLINE_NAME",
+    #         orientation="h",
+    #         labels={
+    #             "retraso_prom_15": "Retraso prom. llegada (> 15 min) [min]",
+    #             "AIRLINE_NAME": "Aerolínea",
+    #         },
+    #         title="Retraso promedio en llegada por aerolínea (solo vuelos > 15 min)",
+    #         text=df_avg_delay_15["retraso_prom_15"].round(1).astype(str),
+    #         color="retraso_prom_15",              # <-- degradado según el retraso promedio
+    #         color_continuous_scale="OrRd",        # escala naranja/rojo suave
+    #     )
 
-        fig_aero_delay_15.update_layout(
-            yaxis={"categoryorder": "total ascending"},
-            coloraxis_showscale=False,
-            plot_bgcolor="rgba(255, 248, 225, 0.6)",
-            paper_bgcolor="rgba(0,0,0,0)",
-        )
-        fig_aero_delay_15.update_traces(
-            textposition="inside",
-            textfont=dict(size=11, color="black"),
-            marker_line_color="rgba(0,0,0,0.25)",
-            marker_line_width=0.8,
-        )
+    #     fig_aero_delay_15.update_layout(
+    #         yaxis={"categoryorder": "total ascending"},
+    #         coloraxis_showscale=False,
+    #         plot_bgcolor="rgba(255, 248, 225, 0.6)",
+    #         paper_bgcolor="rgba(0,0,0,0)",
+    #     )
+    #     fig_aero_delay_15.update_traces(
+    #         textposition="inside",
+    #         textfont=dict(size=11, color="black"),
+    #         marker_line_color="rgba(0,0,0,0.25)",
+    #         marker_line_width=0.8,
+    #     )
 
-        st.plotly_chart(fig_aero_delay_15, use_container_width=True)
+    #     st.plotly_chart(fig_aero_delay_15, use_container_width=True)
+
+   
 
 # ============================
 # TAB 3 - AEROPUERTOS
@@ -2431,6 +2539,84 @@ with tab_tiempo:
             )
 
             st.plotly_chart(fig_mes_per, use_container_width=True)
+            
+#-->
+    # ==============================================
+    # % de vuelos con retraso (> 15 min) por aeropuerto destino
+    # Colores categóricos: Mayor / Menor al promedio
+    # ==============================================
+
+    st.markdown("### % de vuelos con retraso en llegada (> 15 minutos) por aeropuerto destino")
+
+    # Copia del dataframe filtrado actual
+    df_air = df.copy()
+
+    # Asegurar que ARRIVAL_DELAY sea numérico
+    df_air["ARRIVAL_DELAY"] = pd.to_numeric(df_air["ARRIVAL_DELAY"], errors="coerce")
+
+    # Variable binaria: 1 si el vuelo llegó con > 15 min de retraso
+    df_air["RETRASADO_15"] = (df_air["ARRIVAL_DELAY"] > 15).astype(int)
+
+    # Agrupar por aeropuerto destino
+    # ⚠️ Ajusta "DEST_AEROPUERTO" al nombre de tu columna de aeropuerto destino
+    df_airport = (
+        df_air
+        .groupby("DEST_AEROPUERTO", observed=True)["RETRASADO_15"]
+        .mean()
+        .reset_index()
+        .rename(columns={"RETRASADO_15": "porc_retraso_15"})
+    )
+
+    # Pasar a porcentaje
+    df_airport["porc_retraso_15"] = df_airport["porc_retraso_15"] * 100
+
+    # Umbral: promedio de % de retraso del grupo
+    umbral = df_airport["porc_retraso_15"].mean()
+
+    # Categoría de nivel de retraso: Mayor / Menor al promedio
+    df_airport["NIVEL_RETRASO"] = np.where(
+        df_airport["porc_retraso_15"] >= umbral,
+        "Mayor al promedio",
+        "Menor al promedio"
+    )
+
+    # Ordenar de mayor a menor % de retrasos
+    df_airport = df_airport.sort_values("porc_retraso_15", ascending=False)
+
+    # Gráfico de barras horizontal
+    fig_airport = px.bar(
+        df_airport,
+        x="porc_retraso_15",
+        y="DEST_AEROPUERTO",
+        orientation="h",
+        labels={
+            "porc_retraso_15": "% de vuelos retrasados (> 15 minutos)",
+            "DEST_AEROPUERTO": "Aeropuerto destino",
+            "NIVEL_RETRASO": "Nivel de retraso",
+        },
+        title="% de vuelos con retraso en llegada (> 15 minutos) por aeropuerto destino",
+        text=df_airport["porc_retraso_15"].round(2).astype(str) + " %",
+        color="NIVEL_RETRASO",
+        color_discrete_map={
+            "Mayor al promedio": "#d73027",  # rojo
+            "Menor al promedio": "#1a9850",  # verde
+        },
+    )
+
+    fig_airport.update_layout(
+        yaxis={"categoryorder": "total ascending"},
+        plot_bgcolor="rgba(255, 248, 225, 0.6)",
+        paper_bgcolor="rgba(0,0,0,0)",
+    )
+
+    fig_airport.update_traces(
+        textposition="inside",
+        textfont=dict(size=11, color="black"),
+        marker_line_color="rgba(0,0,0,0.25)",
+        marker_line_width=0.8,
+    )
+
+    st.plotly_chart(fig_airport, use_container_width=True)            
 
 # ============================
 # TAB 5 - CAUSAS DE RETRASO

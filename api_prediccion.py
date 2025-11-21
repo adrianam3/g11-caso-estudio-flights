@@ -132,7 +132,7 @@ def load_artifacts():
 
 
 # ============================================================
-# PREPROCESADO (COPIA DE TU DASHBOARD, ADAPTADO A API)
+# PREPROCESADO (COPIA DE DASHBOARD, ADAPTADO A API)
 # ============================================================
 
 def preprocess_data_for_api(df: pd.DataFrame, artifacts: dict) -> pd.DataFrame:
