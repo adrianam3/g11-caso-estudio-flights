@@ -3046,7 +3046,7 @@ with tab_prediccion:
                     # La API devuelve prob_delay, prob_on_time, delayed, threshold_used, message
                     prob_delay = float(data.get("prob_delay", 0.0))
                     prob_on_time = float(data.get("prob_on_time", 1.0 - prob_delay))
-                    threshold = float(data.get("threshold_used", 0.423))
+                    threshold = float(data.get("threshold_used", 0.4027))
                     delayed_flag = bool(data.get("delayed", prob_delay > threshold))
                     msg = data.get("message", "")
 
