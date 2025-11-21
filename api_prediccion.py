@@ -288,7 +288,8 @@ def predict_delay(req: FlightPredictRequest):
         raise HTTPException(status_code=500, detail=f"Error interno al predecir: {msg}")
 
     # Umbral que usas en tu dashboard de planificación
-    THRESHOLD = 0.423
+    THRESHOLD = 0.4027
+    # THRESHOLD = 0.7390
     delayed = prob_delay > THRESHOLD
 
     # Log de la predicción
