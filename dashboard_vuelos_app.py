@@ -87,7 +87,8 @@ PREDICTIONS_LOG = PROJECT_ROOT / "predictions_log.csv"
 # URL de la API FastAPI (api_prediccion.py)
 # Ajustar el host/puerto según uvicorn:
 #   uvicorn api_prediccion:app --host 0.0.0.0 --port 8000
-API_BASE_URL = "http://127.0.0.1:8000"
+# API_BASE_URL = "http://127.0.0.1:8000"
+API_BASE_URL = "https://api-vuelos-1004129844878.us-central1.run.app"
 API_PREDICT_URL = f"{API_BASE_URL}/flights/predict-delay"
 
 def hhmm_to_hhmmss(v):
