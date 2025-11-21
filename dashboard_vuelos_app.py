@@ -228,12 +228,42 @@ for col in ["RETRASADO_LLEGADA", "RETRASADO_SALIDA", "ARRIVAL_DELAY", "DISTANCE"
 
 st.sidebar.header("Filtros")
 
+# # Mes
+# meses_disponibles = sorted(flights["MONTH"].dropna().unique())
+# meses_sel = st.sidebar.multiselect(
+#     "Mes",
+#     options=meses_disponibles,
+#     default=meses_disponibles
+# )
+# Diccionario: número de mes → nombre (en español)
+MESES_NOMBRE = {
+    1: "Enero",
+    2: "Febrero",
+    3: "Marzo",
+    4: "Abril",
+    5: "Mayo",
+    6: "Junio",
+    7: "Julio",
+    8: "Agosto",
+    9: "Septiembre",
+    10: "Octubre",
+    11: "Noviembre",
+    12: "Diciembre",
+}
+
 # Mes
-meses_disponibles = sorted(flights["MONTH"].dropna().unique())
+meses_disponibles = sorted(
+    flights["MONTH"]
+    .dropna()
+    .astype(int)      # por si viene como float
+    .unique()
+)
+
 meses_sel = st.sidebar.multiselect(
     "Mes",
     options=meses_disponibles,
-    default=meses_disponibles
+    default=meses_disponibles,
+    format_func=lambda m: MESES_NOMBRE.get(int(m), str(m))  # muestra el nombre
 )
 
 # Día de la semana
@@ -300,7 +330,8 @@ analizar_llegada = st.sidebar.checkbox("Retraso en llegada", value=True)
 
 df = flights.copy()
 
-df = df[df["MONTH"].isin(meses_sel)]
+# df = df[df["MONTH"].isin(meses_sel)]
+df = df[df["MONTH"].astype(int).isin(meses_sel)]
 df = df[df["DAY_OF_WEEK"].isin(dias_sel)]
 df = df[df["AIRLINE_NAME"].isin(aerolineas_sel)]
 df = df[df["ORIGEN_AEROPUERTO"].isin(origenes_sel)]
