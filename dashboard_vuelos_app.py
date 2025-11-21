@@ -41,7 +41,7 @@ st.title("✈️ Dashboard Predicción de Retrasos de Vuelos en la Industria Aé
 st.markdown("---")
 st.caption("Caso de Estudio | Grupo 11 | Integrantes: ADRIÁN ADOLFO MERLO ARCOS | MARIO ROBERTO FARINANGO TORRES")
 st.markdown("---")
-st.subheader("Análisis Exploratorio de Datos y Predicción Predicción de Retrasos de Vuelos")
+st.subheader("Análisis Exploratorio de Datos y Predicción de Retrasos de Vuelos")
 
 # # ============================
 # # CARGA DE DATOS (+ 5 M - registros )
