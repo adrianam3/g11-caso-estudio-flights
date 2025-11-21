@@ -8,6 +8,7 @@ import joblib
 from pathlib import Path
 from datetime import datetime
 from plotly.subplots import make_subplots
+import requests  #para llamar a la API
 
 import io
 
@@ -37,7 +38,9 @@ st.markdown(
 
 # titulo
 st.title("✈️ Dashboard Predicción de Retrasos de Vuelos en la Industria Aérea. ✈️")
-st.caption("Caso de Estudio | Grupo 11 | Integrantes: Farinango Mario / Adrián Merlo")
+st.markdown("---")
+st.caption("Caso de Estudio | Grupo 11 | Integrantes: ADRIÁN ADOLFO MERLO ARCOS | MARIO ROBERTO FARINANGO TORRES")
+st.markdown("---")
 st.subheader("Análisis Exploratorio de Datos y Predicción Predicción de Retrasos de Vuelos")
 
 # # ============================
@@ -81,27 +84,11 @@ PREPROCESSOR_PATH = MODELS_DIR / "flight_delay_preprocessors.joblib"
 # Log de predicciones
 PREDICTIONS_LOG = PROJECT_ROOT / "predictions_log.csv"
 
-# -------------------------
-# Diccionario de aerolíneas 
-# -------------------------
-# AIRLINES_FULL = {
-#     'AS': 'Alaska Airlines Inc.', 
-#     'AA': 'American Airlines Inc.', 
-#     'US': 'US Airways Inc.', 
-#     'DL': 'Delta Air Lines Inc.', 
-#     'NK': 'Spirit Air Lines', 
-#     'UA': 'United Air Lines Inc.', 
-#     'HA': 'Hawaiian Airlines Inc.', 
-#     'B6': 'JetBlue Airways', 
-#     'OO': 'Skywest Airlines Inc.', 
-#     'EV': 'Atlantic Southeast Airlines', 
-#     'F9': 'Frontier Airlines Inc.', 
-#     'WN': 'Southwest Airlines Co.', 
-#     'MQ': 'American Eagle Airlines Inc.', 
-#     'VX': 'Virgin America'
-# }
-
-
+# URL de la API FastAPI (api_prediccion.py)
+# Ajustar el host/puerto según uvicorn:
+#   uvicorn api_prediccion:app --host 0.0.0.0 --port 8000
+API_BASE_URL = "http://127.0.0.1:8000"
+API_PREDICT_URL = f"{API_BASE_URL}/flights/predict-delay"
 
 def hhmm_to_hhmmss(v):
     try:
@@ -133,79 +120,10 @@ def get_log_bytes():
         return PREDICTIONS_LOG.read_bytes()
     return None
 
-# -------------------------
-# 1) Cargar artefactos
-# -------------------------
-@st.cache_resource
-def load_artifacts():
-    try:
-        preprocessors = None
-        model = None
-        if PREPROCESSOR_PATH.exists():
-            preprocessors = joblib.load(PREPROCESSOR_PATH)
-        else:
-            st.warning(f"No se encontró {PREPROCESSOR_PATH.name} en /models/")
+# ============================
+# CARGA DE FLIGHTS (MUESTRA)
+# ============================
 
-        if MODEL_PATH.exists():
-            try:
-                model = joblib.load(MODEL_PATH)
-            except Exception as e:
-                st.warning(f"No se pudo cargar el modelo: {e}")
-                st.warning("Si aparece 'Booster' object has no attribute 'handle' o errores de dll, reinstala la versión de lightgbm con la que entrenaste.")
-                model = None
-        else:
-            st.warning(f"No se encontró {MODEL_PATH.name} en /models/")
-
-        if model is None or preprocessors is None:
-            return None
-
-        artifacts = {
-            "model": model,
-            "label_encoders": preprocessors.get("label_encoders", {}),
-            "scaler": preprocessors.get("scaler", None),
-            "cat_cols": preprocessors.get("cat_features_names", []),
-            "num_cols": preprocessors.get("num_features_names", [])
-        }
-        artifacts["feature_order"] = artifacts["cat_cols"] + artifacts["num_cols"]
-        return artifacts
-
-    except Exception as e:
-        st.error(f"Error al cargar artefactos: {e}")
-        return None
-
-
-
-artifacts = load_artifacts()
-
-# # === DEBUG opcional: columnas que espera el modelo ===
-# if artifacts is not None:
-#     st.sidebar.markdown("### 🔍 Debug modelo")
-#     if st.sidebar.checkbox("Mostrar columnas esperadas por el modelo"):
-#         st.write("✅ Columnas esperadas (feature_order):")
-#         st.write(artifacts["feature_order"])
-
-artifacts = load_artifacts()
-
-# # === DEBUG opcional: columnas que espera el modelo ===
-# if artifacts is not None:
-#     st.sidebar.markdown("### 🔍 Debug modelo")
-
-#     if st.sidebar.checkbox("Mostrar columnas esperadas por el modelo"):
-#         st.write("✅ Columnas esperadas (feature_order, salida del preprocesador):")
-#         st.write(artifacts["feature_order"])
-
-#         # Si guardaste también las columnas de entrada:
-#         input_feats = artifacts.get("input_features", None)
-#         if input_feats is not None:
-#             st.write("📥 Columnas de entrada que espera el preprocesador (input_features):")
-#             st.write(input_feats)
-
-#             # Comparar con lo que realmente estás enviando
-#             st.write("🧪 Columnas de df_input (antes de preprocesar):")
-#             st.write(df_input.columns.tolist())
-#         else:
-#             st.warning("⚠️ El artefacto no tiene 'input_features' guardado. Solo se muestran 'feature_order'.")
-# -------------------------
 @st.cache_data
 def cargar_datos(path: str, n_muestra: int = 50000, seed: int = 42) -> pd.DataFrame:
     """
@@ -221,28 +139,11 @@ def cargar_datos(path: str, n_muestra: int = 50000, seed: int = 42) -> pd.DataFr
     return df
 
 try:
-    flights = cargar_datos(DATA_PATH)  # por defecto 5 000 filas
+    flights = cargar_datos(DATA_PATH)  # por defecto 50 000 filas
 except FileNotFoundError:
     st.error(f"No se encontró el archivo en: {DATA_PATH}")
     st.stop()
-    
-# def cargar_tabla_ruta():
-#     # tabla agregada por ruta (PARA PREDICCIONES)
-#     tabla = (
-#         flights.groupby(["AIRLINE","ORIGIN_AIRPORT","DESTINATION_AIRPORT"], dropna=False)
-#           .agg(DISTANCIA_HAV=("DISTANCE","mean"),
-#                SCHEDULED_TIME=("SCHEDULED_TIME","median"),
-#                SCHEDULED_ARRIVAL=("SCHEDULED_ARRIVAL","median"))
-#           .reset_index()
-#     )
 
-#     for c in ["DISTANCIA_HAV","SCHEDULED_TIME","SCHEDULED_ARRIVAL"]:
-#         if c in tabla.columns:
-#             tabla[c] = pd.to_numeric(tabla[c], errors="coerce")
-
-#     return tabla
-
-# tabla_rutas = cargar_tabla_ruta()
 @st.cache_data
 def cargar_tabla_ruta(df: pd.DataFrame) -> pd.DataFrame:
     """Tabla agregada por ruta (para predicciones) cacheada."""
@@ -297,91 +198,6 @@ def get_origen_por_aerolinea(df: pd.DataFrame) -> pd.DataFrame:
     Lo usamos para filtrar orígenes por aerolínea sin escanear todos los vuelos cada vez.
     """
     return df[["AIRLINE", "ORIGIN_AIRPORT", "ORIGEN_CIUDAD"]].drop_duplicates()
-
-
-#
-# PREDICCIONES
-# 
-
-# -------------------------
-# Preprocess para inference
-# -------------------------
-def preprocess_data_for_api(df: pd.DataFrame, artifacts: dict) -> pd.DataFrame:
-    df = df.copy()
-    if artifacts is None:
-        raise ValueError("Artifacts is None.")
-
-    label_encoders = artifacts["label_encoders"]
-    scaler = artifacts["scaler"]
-    CAT_COLS = artifacts["cat_cols"]
-    NUM_COLS = artifacts["num_cols"]
-    FINAL_FEATURE_ORDER = artifacts["feature_order"]
-
-    # RUTA
-    df["RUTA"] = df["ORIGIN_AIRPORT"].astype(str) + "_" + df["DESTINATION_AIRPORT"].astype(str)
-
-    # SALIDA cíclica
-    sched_dep = pd.to_numeric(df["SCHEDULED_DEPARTURE"], errors="coerce").fillna(0).astype(int)
-    hs = (sched_dep // 100).clip(0,23)
-    ms = (sched_dep % 100).clip(0,59)
-    minuto_dia_salida = hs * 60 + ms
-    df["SALIDA_SIN"] = np.sin(2 * np.pi * minuto_dia_salida / (24*60))
-    df["SALIDA_COS"] = np.cos(2 * np.pi * minuto_dia_salida / (24*60))
-
-    # LLEGADA cíclica
-    sched_arr = pd.to_numeric(df.get("SCHEDULED_ARRIVAL", 0), errors="coerce").fillna(0).astype(int)
-    hl = (sched_arr // 100).clip(0,23)
-    ml = (sched_arr % 100).clip(0,59)
-    minuto_dia_llegada = hl * 60 + ml
-    df["LLEGADA_SIN"] = np.sin(2 * np.pi * minuto_dia_llegada / (24*60))
-    df["LLEGADA_COS"] = np.cos(2 * np.pi * minuto_dia_llegada / (24*60))
-
-    # Mes cíclico
-    df["MONTH_SIN"] = np.sin(2 * np.pi * df["MONTH"].astype(float) / 12)
-    df["MONTH_COS"] = np.cos(2 * np.pi * df["MONTH"].astype(float) / 12)
-
-    # DISTANCIA_HAV
-    if "DISTANCE" in df.columns and "DISTANCIA_HAV" not in df.columns:
-        df["DISTANCIA_HAV"] = df["DISTANCE"]
-
-    # Label encoding con manejo de <unknown>
-    for col in CAT_COLS:
-        if col in label_encoders:
-            le = label_encoders[col]
-            classes_set = set([str(x) for x in le.classes_])
-            df[col] = df[col].astype(str).apply(lambda x: x if x in classes_set else "<unknown>")
-            try:
-                df[col] = le.transform(df[col])
-            except Exception:
-                mapping = {c:i for i,c in enumerate(le.classes_)}
-                df[col] = df[col].apply(lambda x: mapping.get(x, mapping.get("<unknown>", 0)))
-        else:
-            if col not in df.columns:
-                df[col] = 0
-
-    # Scaling numérico (con fallback)
-    cols_to_scale = [c for c in NUM_COLS if c in df.columns]
-    if scaler is not None and len(cols_to_scale) > 0:
-        try:
-            df[cols_to_scale] = scaler.transform(df[cols_to_scale])
-        except Exception:
-            try:
-                if hasattr(scaler, "mean_") and hasattr(scaler, "scale_"):
-                    for i,c in enumerate(cols_to_scale):
-                        mean_i = scaler.mean_[i] if i < len(scaler.mean_) else 0
-                        scale_i = scaler.scale_[i] if i < len(scaler.scale_) else 1
-                        df[c] = (df[c] - mean_i) / (scale_i + 1e-12)
-            except Exception:
-                pass
-
-    # Asegurar columnas finales
-    for col in FINAL_FEATURE_ORDER:
-        if col not in df.columns:
-            df[col] = 0
-
-    X = df[FINAL_FEATURE_ORDER].copy()
-    return X
-
 
 # ============================
 # PREPARACIÓN BÁSICA
@@ -463,15 +279,14 @@ if "PERIODO_LLEGADA" in flights.columns:
     )
 else:
     periodos_sel = None
-    
+
 # Construir el diccionario Aerolineas
 AIRLINES_FULL = (
     flights[["AIRLINE", "AIRLINE_NAME"]]
-    .drop_duplicates()                      # por si hay muchas filas por aerolínea
-    .set_index("AIRLINE")["AIRLINE_NAME"]  # índice = código, valor = nombre
+    .drop_duplicates()
+    .set_index("AIRLINE")["AIRLINE_NAME"]
     .to_dict()
-)    
-
+)
 
 st.sidebar.markdown("---")
 st.sidebar.write("**Tipo de retraso a analizar**")
@@ -508,7 +323,6 @@ def calcular_porcentaje_retraso(serie_retraso: pd.Series) -> float:
         return 0.0
     return float(serie_valida.mean() * 100)
 
-
 def crear_barra_porcentaje_retraso(df_group, dim, col_retraso, titulo, x_label):
     """Crea gráfico de barras de % retraso por dimensión (aerolínea, aeropuerto, etc.)."""
     tmp = (
@@ -532,6 +346,7 @@ def crear_barra_porcentaje_retraso(df_group, dim, col_retraso, titulo, x_label):
     )
     fig.update_layout(yaxis={"categoryorder": "total ascending"})
     return fig
+
 # Helper para convertir minutos del día (0–1439) a cadena "HH:MM"
 def minutos_a_hora_str(m):
     try:
@@ -541,7 +356,6 @@ def minutos_a_hora_str(m):
         return f"{h:02d}:{mi:02d}"
     except Exception:
         return "00:00"
-
 
 # ============================
 # TABS PRINCIPALES
@@ -2716,325 +2530,329 @@ with tab_causas:
                 )
 
                 st.plotly_chart(fig_prom, use_container_width=True)
-# -------------------------
-# TAB 6 - Predicción interactiva
-# -------------------------
+# ============================
+# TAB 6 - PREDICCIÓN (AHORA VIA API)
+# ============================
 with tab_prediccion:
 
-        st.header("Simulador de Vuelos (Modelo de Planificación)")
-        st.markdown("Introduce los detalles que conoce el pasajero: aerolínea, origen, destino, mes, día y hora de salida (HH:MM).")
-        st.markdown("La hora de llegada no se ingresa; se usa la mediana histórica. Tiempo y distancia se obtienen desde tabla_rutas.")
+    st.header("Simulador de Vuelos (Modelo de Planificación)")
+    st.markdown("Introduce los detalles que conoce el pasajero: aerolínea, origen, destino, mes, día y hora de salida (HH:MM).")
+    st.markdown("La hora de llegada no se ingresa; se usa la mediana histórica. Tiempo y distancia se obtienen desde tabla_rutas.")
 
-        if flights is None or flights.empty:
-            st.warning("No hay datos históricos cargados. Revisa la ruta al CSV en la barra lateral.")
-        else:
-            # 🔁 Usar catálogos cacheados (muy rápidos)
-            origen_df = get_origen_df(flights)
-            destino_df = get_destino_df(flights)
-            airline_options = get_airline_options(flights)
-            origen_por_aerolinea = get_origen_por_aerolinea(flights)
+    if flights is None or flights.empty:
+        st.warning("No hay datos históricos cargados. Revisa la ruta al CSV en la barra lateral.")
+    else:
+        # 🔁 Usar catálogos cacheados (muy rápidos)
+        origen_df = get_origen_df(flights)
+        destino_df = get_destino_df(flights)
+        airline_options = get_airline_options(flights)
+        origen_por_aerolinea = get_origen_por_aerolinea(flights)
 
-            # Destinos completos (los usamos más abajo, pero NO los filtramos aquí)
-            destino_options_full = {}
-            for _, r in destino_df.iterrows():
+        # Destinos completos (se usa como respaldo si no hay filtrados)
+        destino_options_full = {}
+        for _, r in destino_df.iterrows():
+            label = (
+                f"{r['code']} — {r['name']}"
+                if pd.notna(r['name']) and str(r['name']).strip() != ""
+                else f"{r['code']}"
+            )
+            destino_options_full[label] = r["code"]
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            # 1️⃣ Seleccionas primero la aerolínea
+            airline_sel = st.selectbox(
+                "Aerolínea", options=airline_options, key="airline_pred"
+            )
+            airline_code = str(airline_sel).split(" — ")[0].strip()
+
+            # 2️⃣ ORÍGENES válidos para esa aerolínea usando catálogo cacheado
+            origen_df_filtrado = (
+                origen_por_aerolinea[
+                    origen_por_aerolinea["AIRLINE"] == airline_code
+                ][["ORIGIN_AIRPORT", "ORIGEN_CIUDAD"]]
+                .drop_duplicates()
+                .rename(columns={"ORIGIN_AIRPORT": "code", "ORIGEN_CIUDAD": "name"})
+            )
+
+            # Si no hay rutas para esa aerolínea, usar catálogo completo
+            if origen_df_filtrado.empty:
+                origen_df_filtrado = origen_df
+
+            origen_options = {}
+            for _, r in origen_df_filtrado.iterrows():
                 label = (
                     f"{r['code']} — {r['name']}"
                     if pd.notna(r['name']) and str(r['name']).strip() != ""
                     else f"{r['code']}"
                 )
-                destino_options_full[label] = r["code"]
+                origen_options[label] = r["code"]
 
-            col1, col2, col3 = st.columns(3)
+            origen_sel = st.selectbox(
+                "Aeropuerto Origen",
+                options=list(origen_options.keys()),
+                key="origen_pred",
+            )
+            origin_code = origen_options[origen_sel]
 
-            with col1:
-                # 1️⃣ Seleccionas primero la aerolínea
-                airline_sel = st.selectbox(
-                    "Aerolínea", options=airline_options, key="airline_pred"
+        # ----- FILTRADO ESTRICTO: destinos para AIRLINE + ORIGIN -----
+        valid_dest_df = flights[
+            (flights["AIRLINE"] == airline_code) &
+            (flights["ORIGIN_AIRPORT"] == origin_code)
+        ][["DESTINATION_AIRPORT","DEST_CIUDAD"]].drop_duplicates()
+
+        # Excluir mismo origen
+        valid_dest_df = valid_dest_df[valid_dest_df["DESTINATION_AIRPORT"] != origin_code]
+
+        destino_options_filtrados = {}
+        for _, row in valid_dest_df.iterrows():
+            code = row["DESTINATION_AIRPORT"]
+            name = row.get("DEST_CIUDAD", "")
+            label = f"{code} — {name}" if pd.notna(name) and str(name).strip()!="" else f"{code}"
+            destino_options_filtrados[label] = code
+
+        with col2:
+            if not destino_options_filtrados:
+                destino_sel = st.selectbox(
+                    "Aeropuerto Destino",
+                    options=["-- No hay rutas históricas para esta aerolínea desde el origen seleccionado --"],
+                    key="destino_none"
                 )
-                airline_code = str(airline_sel).split(" — ")[0].strip()
-
-                # 2️⃣ Filtras los ORÍGENES que tiene esa aerolínea,
-                #    pero AHORA desde el catálogo cacheado, NO desde flights completo
-                origen_df_filtrado = (
-                    origen_por_aerolinea[
-                        origen_por_aerolinea["AIRLINE"] == airline_code
-                    ][["ORIGIN_AIRPORT", "ORIGEN_CIUDAD"]]
-                    .drop_duplicates()
-                    .rename(columns={"ORIGIN_AIRPORT": "code", "ORIGEN_CIUDAD": "name"})
-                )
-
-                # Si por alguna razón no hay rutas para esa aerolínea,
-                # se muestra el listado completo como respaldo.
-                if origen_df_filtrado.empty:
-                    origen_df_filtrado = origen_df
-
-                origen_options = {}
-                for _, r in origen_df_filtrado.iterrows():
-                    label = (
-                        f"{r['code']} — {r['name']}"
-                        if pd.notna(r['name']) and str(r['name']).strip() != ""
-                        else f"{r['code']}"
-                    )
-                    origen_options[label] = r["code"]
-
-                origen_sel = st.selectbox(
-                    "Aeropuerto Origen",
-                    options=list(origen_options.keys()),
-                    key="origen_pred",
-                )
-                origin_code = origen_options[origen_sel]
-
-            # ----- FILTRADO ESTRICTO: destinos para AIRLINE + ORIGIN -----
-            valid_dest_df = flights[
-                (flights["AIRLINE"] == airline_code) &
-                (flights["ORIGIN_AIRPORT"] == origin_code)
-            ][["DESTINATION_AIRPORT","DEST_CIUDAD"]].drop_duplicates()
-
-            # Excluir mismo origen (por si aparece)
-            valid_dest_df = valid_dest_df[valid_dest_df["DESTINATION_AIRPORT"] != origin_code]
-
-            # Construir labels (codigo — ciudad)
-            destino_options_filtrados = {}
-            for _, row in valid_dest_df.iterrows():
-                code = row["DESTINATION_AIRPORT"]
-                name = row.get("DEST_CIUDAD", "")
-                label = f"{code} — {name}" if pd.notna(name) and str(name).strip()!="" else f"{code}"
-                destino_options_filtrados[label] = code
-
-            with col2:
-                if not destino_options_filtrados:
-                    # Sin rutas para aerolinea+origen: mostrar indicador y bloquear predicción
-                    destino_sel = st.selectbox("Aeropuerto Destino", options=["-- No hay rutas históricas para esta aerolínea desde el origen seleccionado --"], key="destino_none")
-                    dest_code = None
-                else:
-                    destino_sel = st.selectbox("Aeropuerto Destino", options=list(destino_options_filtrados.keys()), key="destino_pred")
-                    dest_code = destino_options_filtrados[destino_sel]
-
-                # Mes y día con keys
-                MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
-                month_idx = st.selectbox("Mes", options=list(range(1,13)), format_func=lambda x: MONTHS[x-1], index=4, key="mes_pred")
-
-                DAYS = {1:"Lunes",2:"Martes",3:"Miércoles",4:"Jueves",5:"Viernes",6:"Sábado",7:"Domingo"}
-                day_of_week = st.selectbox("Día de la semana", options=list(DAYS.keys()), format_func=lambda x: DAYS[x], key="dia_pred")
-
-            with col3:
-                st.write("Hora de salida (HH:MM)")
-                hora = st.selectbox("Hora (0–23)", list(range(24)), key="hora_pred")
-                minuto = st.selectbox("Minuto (00–59)", ["{:02d}".format(i) for i in range(60)], key="minuto_pred")
-
-            sched_dep = int(hora) * 100 + int(minuto)
-
-            if dest_code is None:
-                st.warning(
-                    "No hay destinos válidos para la aerolínea y origen seleccionados. "
-                    "Cambia aerolínea u origen."
-                )
-                distancia = None
-                sched_time = None
-                sched_arr = None
+                dest_code = None
             else:
-                #  1 Usar el dataframe filtrado del dashboard si existe,
-                #    si no, usar flights completo como respaldo
-                base_df = df if "df" in globals() else flights
+                destino_sel = st.selectbox(
+                    "Aeropuerto Destino",
+                    options=list(destino_options_filtrados.keys()),
+                    key="destino_pred"
+                )
+                dest_code = destino_options_filtrados[destino_sel]
 
-                # 2️ Filtrar por aerolínea, origen y destino
-                df_ruta = base_df[
-                    (base_df["AIRLINE"] == airline_code) &
-                    (base_df["ORIGIN_AIRPORT"] == origin_code) &
-                    (base_df["DESTINATION_AIRPORT"] == dest_code)
+            # Mes y día
+            MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"]
+            month_idx = st.selectbox(
+                "Mes",
+                options=list(range(1,13)),
+                format_func=lambda x: MONTHS[x-1],
+                index=4,
+                key="mes_pred"
+            )
+
+            DAYS = {1:"Lunes",2:"Martes",3:"Miércoles",4:"Jueves",5:"Viernes",6:"Sábado",7:"Domingo"}
+            day_of_week = st.selectbox(
+                "Día de la semana",
+                options=list(DAYS.keys()),
+                format_func=lambda x: DAYS[x],
+                key="dia_pred"
+            )
+
+        with col3:
+            st.write("Hora de salida (HH:MM)")
+            hora = st.selectbox("Hora (0–23)", list(range(24)), key="hora_pred")
+            minuto = st.selectbox("Minuto (00–59)", ["{:02d}".format(i) for i in range(60)], key="minuto_pred")
+
+        sched_dep = int(hora) * 100 + int(minuto)
+
+        # ============================
+        # Calcular distancia, tiempo y hora estimada de llegada
+        # ============================
+
+        if dest_code is None:
+            st.warning(
+                "No hay destinos válidos para la aerolínea y origen seleccionados. "
+                "Cambia aerolínea u origen."
+            )
+            distancia = None
+            sched_time = None
+            sched_arr = None
+        else:
+            #  1 Usar el dataframe filtrado del dashboard si existe,
+            #    si no, usar flights completo como respaldo
+            base_df = df if "df" in globals() else flights
+
+            df_ruta = base_df[
+                (base_df["AIRLINE"] == airline_code) &
+                (base_df["ORIGIN_AIRPORT"] == origin_code) &
+                (base_df["DESTINATION_AIRPORT"] == dest_code)
+            ]
+
+            # Afinar por mes y día de la semana seleccionados
+            df_ruta = df_ruta[
+                (df_ruta["MONTH"] == month_idx) &
+                (df_ruta["DAY_OF_WEEK"] == day_of_week)
+            ]
+
+            if df_ruta.empty:
+                # Respaldo: tabla_rutas global
+                ruta = tabla_rutas[
+                    (tabla_rutas["AIRLINE"] == airline_code) &
+                    (tabla_rutas["ORIGIN_AIRPORT"] == origin_code) &
+                    (tabla_rutas["DESTINATION_AIRPORT"] == dest_code)
                 ]
 
-                # 3️ Afinar aún más por MES y DÍA seleccionados en el simulador
-                df_ruta = df_ruta[
-                    (df_ruta["MONTH"] == month_idx) &
-                    (df_ruta["DAY_OF_WEEK"] == day_of_week)
-                ]
-
-                if df_ruta.empty:
-                    #  Respaldo: si con filtros no hay datos, usamos tabla_rutas global
-                    ruta = tabla_rutas[
-                        (tabla_rutas["AIRLINE"] == airline_code) &
-                        (tabla_rutas["ORIGIN_AIRPORT"] == origin_code) &
-                        (tabla_rutas["DESTINATION_AIRPORT"] == dest_code)
-                    ]
-
-                    if ruta.empty:
-                        st.warning(
-                            "No se encontraron datos históricos para esta ruta con los filtros seleccionados."
-                        )
-                        distancia = None
-                        sched_time = None
-                        sched_arr = None
-                    else:
-                        distancia = (
-                            float(ruta["DISTANCIA_HAV"].iloc[0])
-                            if not pd.isna(ruta["DISTANCIA_HAV"].iloc[0])
-                            else None
-                        )
-                        sched_time = (
-                            float(ruta["SCHEDULED_TIME"].iloc[0])
-                            if not pd.isna(ruta["SCHEDULED_TIME"].iloc[0])
-                            else None
-                        )
+                if ruta.empty:
+                    st.warning(
+                        "No se encontraron datos históricos para esta ruta con los filtros seleccionados."
+                    )
+                    distancia = None
+                    sched_time = None
+                    sched_arr = None
                 else:
-                    # Aquí sí depende 100% de los datos seleccionados
                     distancia = (
-                        float(df_ruta["DISTANCE"].mean())
-                        if not df_ruta["DISTANCE"].isna().all()
+                        float(ruta["DISTANCIA_HAV"].iloc[0])
+                        if not pd.isna(ruta["DISTANCIA_HAV"].iloc[0])
                         else None
                     )
                     sched_time = (
-                        float(df_ruta["SCHEDULED_TIME"].median())
-                        if not df_ruta["SCHEDULED_TIME"].isna().all()
+                        float(ruta["SCHEDULED_TIME"].iloc[0])
+                        if not pd.isna(ruta["SCHEDULED_TIME"].iloc[0])
                         else None
                     )
+            else:
+                # Aquí sí depende 100% de los datos seleccionados
+                distancia = (
+                    float(df_ruta["DISTANCE"].mean())
+                    if not df_ruta["DISTANCE"].isna().all()
+                    else None
+                )
+                sched_time = (
+                    float(df_ruta["SCHEDULED_TIME"].median())
+                    if not df_ruta["SCHEDULED_TIME"].isna().all()
+                    else None
+                )
 
-                # 4️ Calcular hora de llegada a partir de:
-                #    hora de salida seleccionada + duración histórica (sched_time)
-                if sched_time is not None:
-                    # hora es int (0–23), minuto es string "00"–"59"
-                    dep_min = int(hora) * 60 + int(minuto)          # minutos desde medianoche
-                    arr_min = dep_min + int(round(sched_time))      # sumar duración en minutos
+            # Calcular hora de llegada a partir de:
+            #    hora de salida seleccionada + duración histórica (sched_time)
+            if sched_time is not None:
+                 # hora es int (0–23), minuto es string "00"–"59"
+                dep_min = int(hora) * 60 + int(minuto)          # minutos desde medianoche
+                arr_min = dep_min + int(round(sched_time))      # sumar duración en minutos
 
-                    # convertir de nuevo a HHMM (24h, manejando cruce de día)
-                    arr_hour = (arr_min // 60) % 24
-                    arr_minute = arr_min % 60
-                    sched_arr = arr_hour * 100 + arr_minute
-                else:
-                    sched_arr = None
+                # convertir de nuevo a HHMM (24h, manejando cruce de día)
+                arr_hour = (arr_min // 60) % 24
+                arr_minute = arr_min % 60
+                sched_arr = arr_hour * 100 + arr_minute
+            else:
+                sched_arr = None
 
-                # 5️ Mostrar métricas
-                if sched_time is not None:
-                    st.metric(
-                        "Tiempo estimado (minutos, mediana histórica)",
-                        f"{int(sched_time):d}",
-                    )
-                else:
-                    st.metric(
-                        "Tiempo estimado (minutos, mediana histórica)",
-                        "N/A",
-                    )
+            # Mostrar métricas
+            if sched_time is not None:
+                st.metric(
+                    "Tiempo estimado (minutos, mediana histórica)",
+                    f"{int(sched_time):d}",
+                )
+            else:
+                st.metric(
+                    "Tiempo estimado (minutos, mediana histórica)",
+                    "N/A",
+                )
 
-                if distancia is not None:
-                    st.metric(
-                        "Distancia (millas, media histórica)",
-                        f"{distancia:.1f}",
-                    )
-                else:
-                    st.metric(
-                        "Distancia (millas, media histórica)",
-                        "N/A",
-                    )
+            if distancia is not None:
+                st.metric(
+                    "Distancia (millas, media histórica)",
+                    f"{distancia:.1f}",
+                )
+            else:
+                st.metric(
+                    "Distancia (millas, media histórica)",
+                    "N/A",
+                )
 
-                if sched_arr is not None:
-                    st.info(
-                        f"Hora llegada estimada (mediana histórica): "
-                        f"**{hhmm_to_hhmmss(sched_arr)}**"
-                    )
+            if sched_arr is not None:
+                st.info(
+                    f"Hora llegada estimada (mediana histórica): "
+                    f"**{hhmm_to_hhmmss(sched_arr)}**"
+                )
 
-            st.markdown("---")
-
-            # Botón PREDECIR
-            col_btn, col_sp = st.columns([1, 5])
-            with col_btn:
-                predict_click = st.button("Predecir Retraso", type="primary", key="predict_btn")
-
-            if predict_click:
-                if artifacts is None:
-                    st.error("Artefactos del modelo no cargados. Coloca los .joblib en /models/.")
-                elif dest_code is None:
-                    st.error("No hay destino válido seleccionado. Elige una aerolínea/origen con rutas históricas.")
-                elif distancia is None or sched_time is None:
-                    st.error("Faltan datos históricos (distancia o tiempo programado) para esta ruta.")
-                else:
-                    input_data = {
-                        "MONTH": int(month_idx),
-                        "DAY_OF_WEEK": int(day_of_week),
-                        "AIRLINE": airline_code,
-                        "ORIGIN_AIRPORT": origin_code,
-                        "DESTINATION_AIRPORT": dest_code,
-                        "SCHEDULED_DEPARTURE": int(sched_dep),
-                        "SCHEDULED_ARRIVAL": int(sched_arr) if sched_arr is not None else 0,
-                        "SCHEDULED_TIME": float(sched_time),
-                        "DISTANCE": float(distancia)
-                    }
-                    df_input = pd.DataFrame([input_data])
-                    
-                    # # === DEBUG opcional: comparar columnas ===
-                    # st.write(" Columnas de df_input (antes de preprocesar):")
-                    # st.write(df_input.columns.tolist())
-                    
-                    try:
-                        Xp = preprocess_data_for_api(df_input, artifacts)
-                        
-                        #--
-                        # # DEBUG: comprobar que las columnas finales son las esperadas
-                        # st.write(" Columnas que se envían al modelo (Xp.columns):")
-                        # st.write(Xp.columns.tolist())
-                        # st.write(f"Shape de Xp: {Xp.shape}")
-
-                        # # (opcional) Validación fuerte
-                        # missing = set(artifacts["feature_order"]) - set(Xp.columns)
-                        # extra   = set(Xp.columns) - set(artifacts["feature_order"])
-                        # if missing:
-                        #     st.error(f"Faltan columnas en Xp respecto a feature_order: {missing}")
-                        # if extra:
-                        #     st.warning(f"Hay columnas extra en Xp que el modelo no esperaba: {extra}")
-                        
-                        # #--
-                        
-                        
-                        model = artifacts["model"]
-                        probs = model.predict_proba(Xp)[0]
-                        prob_delay = float(probs[1])
-
-                        col_r1, col_r2 = st.columns([2,1])
-                        col_r1.metric("Probabilidad de llegar >15 min tarde", f"{prob_delay*100:.2f}%")
-                        col_r2.progress(prob_delay)
-                        # Definimos el umbral adecuado para el modelo de planificación
-                        UMBRAL_OPTIMO = 0.423
-
-                        if prob_delay > UMBRAL_OPTIMO:
-                            st.error("⚠️ Retraso probable (por encima del umbral óptimo).")
-                        else:
-                            st.success("✅ Probablemente a tiempo (por debajo del umbral).")
-
-                        origin_name = origen_sel
-                        dest_name = destino_sel if dest_code is not None else ""
-                        log_entry = {
-                            "timestamp_utc": datetime.utcnow().isoformat(),
-                            "airline": airline_code,
-                            "origin_code": origin_code,
-                            "origin_name": origin_name,
-                            "dest_code": dest_code,
-                            "dest_name": dest_name,
-                            "month": month_idx,
-                            "day_of_week": day_of_week,
-                            "scheduled_dep": sched_dep,
-                            "scheduled_arr": int(sched_arr) if sched_arr is not None else 0,
-                            "scheduled_time": sched_time,
-                            "distance": distancia,
-                            "prob_delay": prob_delay
-                        }
-                        append_log(log_entry)
-
-                    except Exception as e:
-                        st.error(f"Error en la predicción: {e}")
-                        if "Booster' object has no attribute 'handle" in str(e) or "lib_lightgbm.dll" in str(e) or "Could not find module" in str(e):
-                            st.info("Error típico de incompatibilidad LightGBM/DLL. Reinstala la versión de lightgbm con la que entrenaste (ej. pip install lightgbm==3.3.5).")
-                        st.exception(e)    
         st.markdown("---")
-            
-            # Descargar log si existe
+
+        # ============================
+        # Botón PREDECIR -> llama API
+        # ============================
+
+        col_btn, col_sp = st.columns([1, 5])
+        with col_btn:
+            predict_click = st.button("Predecir Retraso", type="primary", key="predict_btn")
+
+        if predict_click:
+            if dest_code is None:
+                st.error("No hay destino válido seleccionado. Elige una aerolínea/origen con rutas históricas.")
+            elif distancia is None or sched_time is None:
+                st.error("Faltan datos históricos (distancia o tiempo programado) para esta ruta.")
+            else:
+                # Payload para la API (coincide con el modelo pydantic de api_prediccion.py)
+                payload = {
+                    "month": int(month_idx),
+                    "day_of_week": int(day_of_week),
+                    "airline": airline_code,
+                    "origin_airport": origin_code,
+                    "destination_airport": dest_code,
+                    "scheduled_departure": int(sched_dep),
+                    "scheduled_arrival": int(sched_arr) if sched_arr is not None else 0,
+                    "scheduled_time": float(sched_time),
+                    "distance": float(distancia)
+                }
+
+                try:
+                    resp = requests.post(API_PREDICT_URL, json=payload, timeout=10)
+                    # Si FastAPI devuelve error, raise_for_status lanza excepción
+                    resp.raise_for_status()
+                    data = resp.json()
+
+                    # La API devuelve prob_delay, prob_on_time, delayed, threshold_used, message
+                    prob_delay = float(data.get("prob_delay", 0.0))
+                    prob_on_time = float(data.get("prob_on_time", 1.0 - prob_delay))
+                    threshold = float(data.get("threshold_used", 0.423))
+                    delayed_flag = bool(data.get("delayed", prob_delay > threshold))
+                    msg = data.get("message", "")
+
+                    col_r1, col_r2 = st.columns([2,1])
+                    col_r1.metric("Probabilidad de llegar >15 min tarde", f"{prob_delay*100:.2f}%")
+                    col_r2.progress(prob_delay)
+
+                    if delayed_flag:
+                        st.error(f"⚠️ Retraso probable (por encima del umbral {threshold:.3f}). {msg}")
+                    else:
+                        st.success(f"✅ Probablemente a tiempo (por debajo del umbral {threshold:.3f}). {msg}")
+
+                    # Guardar log localmente
+                    origin_name = origen_sel
+                    dest_name = destino_sel if dest_code is not None else ""
+                    log_entry = {
+                        "timestamp_utc": datetime.utcnow().isoformat(),
+                        "airline": airline_code,
+                        "origin_code": origin_code,
+                        "origin_name": origin_name,
+                        "dest_code": dest_code,
+                        "dest_name": dest_name,
+                        "month": month_idx,
+                        "day_of_week": day_of_week,
+                        "scheduled_dep": sched_dep,
+                        "scheduled_arr": int(sched_arr) if sched_arr is not None else 0,
+                        "scheduled_time": sched_time,
+                        "distance": distancia,
+                        "prob_delay": prob_delay
+                    }
+                    append_log(log_entry)
+
+                except requests.exceptions.RequestException as e:
+                    st.error(f"No se pudo conectar con la API de predicción ({API_PREDICT_URL}).")
+                    st.code(str(e))
+                except Exception as e:
+                    st.error("Error inesperado al procesar la predicción.")
+                    st.exception(e)
+
+        st.markdown("---")
+
+        # Descargar log si existe
         if PREDICTIONS_LOG.exists():
             csv_bytes = get_log_bytes()
             if csv_bytes:
-                st.download_button("⬇️ Descargar log de predicciones", data=csv_bytes, file_name="predictions_log.csv", mime="text/csv")
+                st.download_button(
+                    "⬇️ Descargar log de predicciones",
+                    data=csv_bytes,
+                    file_name="predictions_log.csv",
+                    mime="text/csv"
+                )
         else:
             st.info("Aún no hay predicciones registradas.")
-
-        # Mensaje artefactos
-        if artifacts is None:
-            st.warning("Artefactos del modelo no cargados. Predicción deshabilitada.")
-        else:
-            st.success("Artefactos cargados ✓")

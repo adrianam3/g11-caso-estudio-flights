@@ -246,7 +246,7 @@ def health_check():
     return {"status": "ok", "model_loaded": artifacts is not None}
 
 
-@app.post("/predict", response_model=FlightPredictResponse)
+@app.post("/flights/predict-delay", response_model=FlightPredictResponse)
 def predict_delay(req: FlightPredictRequest):
     """
     Endpoint principal de predicción.
