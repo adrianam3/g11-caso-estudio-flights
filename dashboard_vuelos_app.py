@@ -2540,83 +2540,83 @@ with tab_tiempo:
 
             st.plotly_chart(fig_mes_per, use_container_width=True)
             
-#-->
-    # ==============================================
-    # % de vuelos con retraso (> 15 min) por aeropuerto destino
-    # Colores categóricos: Mayor / Menor al promedio
-    # ==============================================
+# #-->
+#     # ==============================================
+#     # % de vuelos con retraso (> 15 min) por aeropuerto destino
+#     # Colores categóricos: Mayor / Menor al promedio
+#     # ==============================================
 
-    st.markdown("### % de vuelos con retraso en llegada (> 15 minutos) por aeropuerto destino")
+#     st.markdown("### % de vuelos con retraso en llegada (> 15 minutos) por aeropuerto destino")
 
-    # Copia del dataframe filtrado actual
-    df_air = df.copy()
+#     # Copia del dataframe filtrado actual
+#     df_air = df.copy()
 
-    # Asegurar que ARRIVAL_DELAY sea numérico
-    df_air["ARRIVAL_DELAY"] = pd.to_numeric(df_air["ARRIVAL_DELAY"], errors="coerce")
+#     # Asegurar que ARRIVAL_DELAY sea numérico
+#     df_air["ARRIVAL_DELAY"] = pd.to_numeric(df_air["ARRIVAL_DELAY"], errors="coerce")
 
-    # Variable binaria: 1 si el vuelo llegó con > 15 min de retraso
-    df_air["RETRASADO_15"] = (df_air["ARRIVAL_DELAY"] > 15).astype(int)
+#     # Variable binaria: 1 si el vuelo llegó con > 15 min de retraso
+#     df_air["RETRASADO_15"] = (df_air["ARRIVAL_DELAY"] > 15).astype(int)
 
-    # Agrupar por aeropuerto destino
-    # ⚠️ Ajusta "DEST_AEROPUERTO" al nombre de tu columna de aeropuerto destino
-    df_airport = (
-        df_air
-        .groupby("DEST_AEROPUERTO", observed=True)["RETRASADO_15"]
-        .mean()
-        .reset_index()
-        .rename(columns={"RETRASADO_15": "porc_retraso_15"})
-    )
+#     # Agrupar por aeropuerto destino
+#     # ⚠️ Ajusta "DEST_AEROPUERTO" al nombre de tu columna de aeropuerto destino
+#     df_airport = (
+#         df_air
+#         .groupby("DEST_AEROPUERTO", observed=True)["RETRASADO_15"]
+#         .mean()
+#         .reset_index()
+#         .rename(columns={"RETRASADO_15": "porc_retraso_15"})
+#     )
 
-    # Pasar a porcentaje
-    df_airport["porc_retraso_15"] = df_airport["porc_retraso_15"] * 100
+#     # Pasar a porcentaje
+#     df_airport["porc_retraso_15"] = df_airport["porc_retraso_15"] * 100
 
-    # Umbral: promedio de % de retraso del grupo
-    umbral = df_airport["porc_retraso_15"].mean()
+#     # Umbral: promedio de % de retraso del grupo
+#     umbral = df_airport["porc_retraso_15"].mean()
 
-    # Categoría de nivel de retraso: Mayor / Menor al promedio
-    df_airport["NIVEL_RETRASO"] = np.where(
-        df_airport["porc_retraso_15"] >= umbral,
-        "Mayor al promedio",
-        "Menor al promedio"
-    )
+#     # Categoría de nivel de retraso: Mayor / Menor al promedio
+#     df_airport["NIVEL_RETRASO"] = np.where(
+#         df_airport["porc_retraso_15"] >= umbral,
+#         "Mayor al promedio",
+#         "Menor al promedio"
+#     )
 
-    # Ordenar de mayor a menor % de retrasos
-    df_airport = df_airport.sort_values("porc_retraso_15", ascending=False)
+#     # Ordenar de mayor a menor % de retrasos
+#     df_airport = df_airport.sort_values("porc_retraso_15", ascending=False)
 
-    # Gráfico de barras horizontal
-    fig_airport = px.bar(
-        df_airport,
-        x="porc_retraso_15",
-        y="DEST_AEROPUERTO",
-        orientation="h",
-        labels={
-            "porc_retraso_15": "% de vuelos retrasados (> 15 minutos)",
-            "DEST_AEROPUERTO": "Aeropuerto destino",
-            "NIVEL_RETRASO": "Nivel de retraso",
-        },
-        title="% de vuelos con retraso en llegada (> 15 minutos) por aeropuerto destino",
-        text=df_airport["porc_retraso_15"].round(2).astype(str) + " %",
-        color="NIVEL_RETRASO",
-        color_discrete_map={
-            "Mayor al promedio": "#d73027",  # rojo
-            "Menor al promedio": "#1a9850",  # verde
-        },
-    )
+#     # Gráfico de barras horizontal
+#     fig_airport = px.bar(
+#         df_airport,
+#         x="porc_retraso_15",
+#         y="DEST_AEROPUERTO",
+#         orientation="h",
+#         labels={
+#             "porc_retraso_15": "% de vuelos retrasados (> 15 minutos)",
+#             "DEST_AEROPUERTO": "Aeropuerto destino",
+#             "NIVEL_RETRASO": "Nivel de retraso",
+#         },
+#         title="% de vuelos con retraso en llegada (> 15 minutos) por aeropuerto destino",
+#         text=df_airport["porc_retraso_15"].round(2).astype(str) + " %",
+#         color="NIVEL_RETRASO",
+#         color_discrete_map={
+#             "Mayor al promedio": "#d73027",  # rojo
+#             "Menor al promedio": "#1a9850",  # verde
+#         },
+#     )
 
-    fig_airport.update_layout(
-        yaxis={"categoryorder": "total ascending"},
-        plot_bgcolor="rgba(255, 248, 225, 0.6)",
-        paper_bgcolor="rgba(0,0,0,0)",
-    )
+#     fig_airport.update_layout(
+#         yaxis={"categoryorder": "total ascending"},
+#         plot_bgcolor="rgba(255, 248, 225, 0.6)",
+#         paper_bgcolor="rgba(0,0,0,0)",
+#     )
 
-    fig_airport.update_traces(
-        textposition="inside",
-        textfont=dict(size=11, color="black"),
-        marker_line_color="rgba(0,0,0,0.25)",
-        marker_line_width=0.8,
-    )
+#     fig_airport.update_traces(
+#         textposition="inside",
+#         textfont=dict(size=11, color="black"),
+#         marker_line_color="rgba(0,0,0,0.25)",
+#         marker_line_width=0.8,
+#     )
 
-    st.plotly_chart(fig_airport, use_container_width=True)            
+#     st.plotly_chart(fig_airport, use_container_width=True)            
 
 # ============================
 # TAB 5 - CAUSAS DE RETRASO
