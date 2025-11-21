@@ -2260,7 +2260,7 @@ with tab_tiempo:
     # ======================================================
     # % de vuelos retrasados (> 15 min) según hora de LLEGADA
     # ======================================================
-    st.markdown("---")
+    
     st.markdown("### % de vuelos retrasados (> 15 min) según hora de llegada (bloques de 30 min)")
 
     # Verificamos columnas necesarias
@@ -2315,7 +2315,7 @@ with tab_tiempo:
                     x=dash_lleg["BUCKET_30_LLEGADA"],
                     y=dash_lleg["Porc_Retrasados"],
                     mode="lines+markers",  # <-- sin texto impreso
-                    line=dict(color="#F57C00", width=2),
+                    line=dict(color="#2410D8", width=2),
                     marker=dict(size=6),
                     customdata=custom_lleg,
                     hovertemplate=(
@@ -2496,72 +2496,142 @@ with tab_causas:
 
             st.markdown("---")
 
-            # --------------------------------------------------
-            # 3) Gráfico tipo dona con TODAS las causas
-            # --------------------------------------------------
-            st.markdown("### Distribución de vuelos retrasados (> 15 min) por motivo")
+            # # --------------------------------------------------
+            # # 3) Gráfico tipo dona con TODAS las causas
+            # # --------------------------------------------------
+            # st.markdown("### Distribución de vuelos retrasados (> 15 min) por motivo")
 
-            if df_prom.empty:
-                st.info("No hay datos suficientes para construir la dona.")
-            else:
-                df_prom_graf = df_prom.copy()
+            # if df_prom.empty:
+            #     st.info("No hay datos suficientes para construir la dona.")
+            # else:
+            #     df_prom_graf = df_prom.copy()
 
-                labels = df_prom_graf["MOTIVO_RETRASO_CLEAN"]
-                values = df_prom_graf["vuelos"]
+            #     labels = df_prom_graf["MOTIVO_RETRASO_CLEAN"]
+            #     values = df_prom_graf["vuelos"]
 
-                # customdata: [vuelos, promedio_retraso] para el hover
-                customdata = np.stack(
-                    [df_prom_graf["vuelos"], df_prom_graf["promedio_retraso"]],
-                    axis=-1
-                )
+            #     # customdata: [vuelos, promedio_retraso] para el hover
+            #     customdata = np.stack(
+            #         [df_prom_graf["vuelos"], df_prom_graf["promedio_retraso"]],
+            #         axis=-1
+            #     )
 
-                # Paleta secuencial suave
-                base_palette = px.colors.sequential.YlOrRd
-                colors = [
-                    base_palette[i % len(base_palette)]
-                    for i in range(len(labels))
-                ]
+            #     # Paleta secuencial suave
+            #     base_palette = px.colors.sequential.YlOrRd
+            #     colors = [
+            #         base_palette[i % len(base_palette)]
+            #         for i in range(len(labels))
+            #     ]
 
-                fig_prom = go.Figure(
-                    data=[
-                        go.Pie(
-                            labels=labels,
-                            values=values,
-                            hole=0.55,                 # dona
-                            sort=False,
-                            direction="clockwise",
-                            textposition="outside",    # etiquetas fuera
-                            textinfo="label+percent",  # nombre + %
-                            textfont=dict(size=11),
-                            marker=dict(
-                                colors=colors,
-                                line=dict(color="black", width=0.4),
-                            ),
-                            pull=[0.03] * len(labels),  # ligero efecto de separación
-                            customdata=customdata,
-                            hovertemplate=(
-                                "<b>%{label}</b><br>"
-                                "Vuelos: %{customdata[0]:,}<br>"
-                                "Promedio retraso: %{customdata[1]:.2f} min"
-                                "<extra></extra>"
-                            ),
-                        )
-                    ]
-                )
+            #     fig_prom = go.Figure(
+            #         data=[
+            #             go.Pie(
+            #                 labels=labels,
+            #                 values=values,
+            #                 hole=0.55,                 # dona
+            #                 sort=False,
+            #                 direction="clockwise",
+            #                 textposition="outside",    # etiquetas fuera
+            #                 textinfo="label+percent",  # nombre + %
+            #                 textfont=dict(size=11),
+            #                 marker=dict(
+            #                     colors=colors,
+            #                     line=dict(color="black", width=0.4),
+            #                 ),
+            #                 pull=[0.03] * len(labels),  # ligero efecto de separación
+            #                 customdata=customdata,
+            #                 hovertemplate=(
+            #                     "<b>%{label}</b><br>"
+            #                     "Vuelos: %{customdata[0]:,}<br>"
+            #                     "Promedio retraso: %{customdata[1]:.2f} min"
+            #                     "<extra></extra>"
+            #                 ),
+            #             )
+            #         ]
+            #     )
 
-                fig_prom.update_layout(
-                    title=dict(
-                        text=(
-                            "Promedio de retraso en llegada (> 15 min) "
-                            "por motivo (todas las causas)"
+            #     fig_prom.update_layout(
+            #         title=dict(
+            #             text=(
+            #                 "Promedio de retraso en llegada (> 15 min) "
+            #                 "por motivo (todas las causas)"
+            #             ),
+            #             x=0.5,
+            #         ),
+            #         showlegend=False,
+            #         margin=dict(l=40, r=40, t=80, b=40),
+            #     )
+
+            #     st.plotly_chart(fig_prom, use_container_width=True)
+
+        st.markdown("---")
+
+        # --------------------------------------------------
+        # 3) Gráfico tipo dona con TODAS las causas
+        # --------------------------------------------------
+        st.markdown("### Distribución de vuelos retrasados (> 15 min) por motivo")
+
+        if df_prom.empty:
+            st.info("No hay datos suficientes para construir la dona.")
+        else:
+            df_prom_graf = df_prom.copy()
+
+            labels = df_prom_graf["MOTIVO_RETRASO_CLEAN"]
+            values = df_prom_graf["vuelos"]
+
+            # customdata: [promedio_retraso] para el hover (solo 1 valor, redondeado)
+            customdata = np.stack(
+                [df_prom_graf["promedio_retraso"].round(2)],
+                axis=-1
+            )
+
+            # Paleta de colores más vivos
+            base_palette = px.colors.qualitative.Bold
+            colors = [
+                base_palette[i % len(base_palette)]
+                for i in range(len(labels))
+            ]
+
+            fig_prom = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=labels,
+                        values=values,
+                        hole=0.55,                 # dona
+                        sort=False,
+                        direction="clockwise",
+                        textposition="outside",    # etiquetas fuera
+                        textinfo="label+percent",  # nombre + %
+                        textfont=dict(size=11),
+                        marker=dict(
+                            colors=colors,
+                            line=dict(color="black", width=0.5),
                         ),
-                        x=0.5,
-                    ),
-                    showlegend=False,
-                    margin=dict(l=40, r=40, t=80, b=40),
-                )
+                        pull=[0.03] * len(labels),  # ligero efecto de separación
+                        customdata=customdata,
+                        hovertemplate=(
+                            "<b>%{label}</b><br>"
+                            "Vuelos: %{value:,}<br>"
+                            "Promedio retraso: %{customdata[0]} min"
+                            "<extra></extra>"
+                        ),
+                    )
+                ]
+            )
 
-                st.plotly_chart(fig_prom, use_container_width=True)
+            fig_prom.update_layout(
+                title=dict(
+                    text=(
+                        "Promedio de retraso en llegada (> 15 min) "
+                        "por motivo (todas las causas)"
+                    ),
+                    x=0.5,
+                ),
+                showlegend=False,
+                margin=dict(l=40, r=40, t=80, b=40),
+            )
+
+            st.plotly_chart(fig_prom, use_container_width=True)
+
 # ============================
 # TAB 6 - PREDICCIÓN (AHORA VIA API)
 # ============================
