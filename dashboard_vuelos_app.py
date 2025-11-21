@@ -69,7 +69,7 @@ st.subheader("Análisis Exploratorio de Datos y Predicción de Retrasos de Vuelo
 
 # Ajusta esta ruta a donde tengas flights_clean.csv
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_PATH = os.path.join(BASE_DIR, "data", "processed", "flights_clean.csv")
+DATA_PATH = os.path.join(BASE_DIR, "sample", "processed", "flights_clean.csv")
 
 # -------------------------
 # Config y rutas 
